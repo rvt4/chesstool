@@ -46,7 +46,7 @@ let PRACTICE_LOCK=false;
 let LF=null,LT=null; // last move from/to squares
 
 // bot state
-let BOT_ACTIVE=false,BOT_THINKING=false,BOT_SKILL=1,BOT_LABEL='Beginner',BOT_COLOR='white';
+let BOT_ACTIVE=false,BOT_THINKING=false,BOT_SKILL=1,BOT_LABEL='Beginner',BOT_COLOR='white',BOT_GAME_COLOR='white';
 let BOT_LOG=[];
 // quiz state
 let Q_SCORE={c:0,t:0};
@@ -56,6 +56,9 @@ let QUIZ_DONE=false;
 let QUIZ_RESULT=null;
 // stockfish
 let SF=null,SF_CB=null,SF_READY=false,SF_FAILED=false,SF_TIMER=null;
+let SF_LAST_INFO=null;
+let REVIEW_FENS=[],REVIEW_INDEX=0,REVIEW_RESULTS=[];
+let LAST_COACH='';
 
 // ─── BOARD RENDERING ─────────────────────────────────────────────────────────
 // CRITICAL: drawBoard ONLY reads FLIPPED, never writes it
@@ -68,7 +71,7 @@ function drawBoard(){
       const rank=FLIPPED?vr:7-vr;
       const file=FLIPPED?7-vf:vf;
       const sq=document.createElement('div');
-      sq.className='sq '+((rank+file)%2===0?'lt':'dk');
+      sq.className='sq '+((rank+file)%2===0?'dk':'lt');
       if(LF&&LF.r===rank&&LF.f===file)sq.classList.add('lf');
       if(LT&&LT.r===rank&&LT.f===file)sq.classList.add('lt2');
       const p=GP(bd,rank,file);
@@ -217,7 +220,7 @@ function handlePracticeMove(uci){
   if(correct){
     refreshPanel();
     const msg=MODE==='explorer'?'✓ '+san+' — '+(stripHtml(node?.note)||'matches your repertoire.'):'✓ Correct: '+san;
-    setStat(msg,'ok');
+    setStat(msg,'ok');setCoach(msg);
     renderStudy();
     setTimeout(practiceAutoReply,450);
     return;
@@ -227,12 +230,13 @@ function handlePracticeMove(uci){
   // it and restore the exact pre-mistake position so the learner can retry.
   PRACTICE_LOCK=true;
   const explanation=explainExpectedMove(expected,node);
-  setStat('✗ '+san+' is legal, but it leaves your selected repertoire. '+explanation,'bad');
+  const miss='✗ '+san+' is legal, but it leaves your selected repertoire. '+explanation;
+  setStat(miss,'bad');setCoach(miss);
   document.getElementById('note').innerHTML='<strong>Why this is a miss:</strong> '+explanation;
   setTimeout(()=>{
     FEN=beforeFen;HIST=beforeHist;SANS=beforeSans;SEL=null;LDOTS=[];LF=null;LT=null;PRACTICE_LOCK=false;
     refreshPanel();drawBoard();drawMoveList();renderStudy();
-    setStat('Try the position again.','info');
+    setStat('Try the position again.','info');setCoach(miss);
   },2400);
 }
 
@@ -252,6 +256,17 @@ function buildLineSelector(){
   }
 }
 
+function selectLineFamily(which){
+  SEL_LINES.clear();
+  DLINES.forEach(l=>{
+    if(which==='all'||l.color===which)SEL_LINES.add(l.id);
+  });
+  buildLineSelector();
+  const label=which==='white'?'English only':which==='black'?'Caro-Kann only':'all English + Caro-Kann';
+  setStat('Selected '+label+'. Press Start Session.','info');
+  setCoach('Selected '+label+'.');
+}
+
 function startRandom(){
   const avail=DLINES.filter(l=>SEL_LINES.has(l.id));
   if(!avail.length){setStat('Select at least one line.','bad');return;}
@@ -262,9 +277,16 @@ function startRandom(){
   FLIPPED=SESSION_COLOR==='black';
   fullReset();SESSION_STARTED=true; // fullReset clears board state only; restore session flag
   const family=SESSION_COLOR==='white'?'English as White':'Caro-Kann as Black';
-  setStat((MODE==='drill'?'TRAIN':'STUDY')+': '+family+' — opponent variations will be randomized from your selected lines.','info');
+  const startMsg=(MODE==='drill'?'TRAIN':'STUDY')+': '+family+' — opponent variations will be randomized from your selected lines.';
+  setStat(startMsg,'info');setCoach(startMsg);
   renderStudy();
   setTimeout(practiceAutoReply,350);
+}
+
+function finishPracticeLine(){
+  SESSION_STARTED=false;PRACTICE_LOCK=true;SEL=null;LDOTS=[];
+  const msg='🏁 Repertoire line complete. Start Session again for another randomized branch.';
+  setStat(msg,'ok');setCoach(msg);renderStudy();drawBoard();
 }
 
 function practiceAutoReply(){
@@ -273,14 +295,14 @@ function practiceAutoReply(){
   const{turn}=parseFen(FEN),userTurn=SESSION_COLOR==='white'?'w':'b';
   if(turn===userTurn){
     const moves=expectedPracticeMoves();
-    if(!moves.length){setStat('🏁 End of this selected repertoire branch. Start another session to get a new variation.','info');}
+    if(!moves.length){finishPracticeLine();return;}
     else setStat(MODE==='drill'?'Your turn — find your repertoire move.':'Your turn — recommended moves are shown below.','info');
     renderStudy();drawBoard();return;
   }
   const lines=currentPracticeLines();
   if(!lines.length){setStat('No selected line matches this position. Start a new session.','bad');return;}
   const candidates=lines.map(l=>l.sans[SANS.length]).filter(Boolean);
-  if(!candidates.length){setStat('🏁 End of selected line.','info');return;}
+  if(!candidates.length){finishPracticeLine();return;}
   // Pick a compatible line, not DB's first global move. This is what makes
   // multiple selected variations genuinely random and prevents branch jumping.
   const san=candidates[Math.floor(Math.random()*candidates.length)];
@@ -290,6 +312,7 @@ function practiceAutoReply(){
   const nf=applyUci(FEN,uci);FEN=nf;HIST.push(nf);SANS.push(san);SEL=null;LDOTS=[];
   refreshPanel();drawBoard();drawMoveList();renderStudy();
   setStat('Opponent played '+san+'. Your turn.','info');
+  if(LAST_COACH)setCoach(LAST_COACH+'  •  Opponent: '+san+'.');
 }
 
 function doHint(){
@@ -314,11 +337,17 @@ function initSF(){
       SF.onmessage=e=>{
         const msg=String(e.data||'');
         if(msg==='readyok'||msg.includes('uciok'))SF_READY=true;
+        if(msg.startsWith('info ')){
+          const sm=msg.match(/score (cp|mate) (-?\d+)/);
+          const pv=msg.match(/ pv (.+)$/);
+          if(sm)SF_LAST_INFO={type:sm[1],value:+sm[2],pv:pv?pv[1].trim().split(/\s+/):[]};
+        }
         if(msg.startsWith('bestmove')&&SF_CB){
           clearTimeout(SF_TIMER);
           const bm=msg.split(' ')[1];
           const cb=SF_CB;SF_CB=null;
-          cb(bm&&bm!=='(none)'?bm:null);
+          const info=SF_LAST_INFO;SF_LAST_INFO=null;
+          cb(bm&&bm!=='(none)'?bm:null,info);
         }
       };
       SF.onerror=()=>{SF_FAILED=true;SF_READY=false;try{SF.terminate();}catch(e){}SF=null;};
@@ -375,7 +404,7 @@ function localBestMove(fen,skill){
 function sfBestMove(fen,skill,cb){
   const fallback=()=>setTimeout(()=>cb(localBestMove(fen,skill)),180);
   if(!SF||SF_FAILED){fallback();return;}
-  SF_CB=move=>cb(move||localBestMove(fen,skill));
+  SF_CB=(move,info)=>cb(move||localBestMove(fen,skill),info);
   const mt=skill<=2?400:skill<=8?800:1300;
   try{
     SF.postMessage('setoption name Skill Level value '+skill);
@@ -384,7 +413,7 @@ function sfBestMove(fen,skill,cb){
     // Never let an engine-loading/browser issue terminate the chess game.
     clearTimeout(SF_TIMER);
     SF_TIMER=setTimeout(()=>{
-      if(SF_CB){const done=SF_CB;SF_CB=null;done(localBestMove(fen,skill));}
+      if(SF_CB){const done=SF_CB;SF_CB=null;done(localBestMove(fen,skill),null);}
     },mt+1800);
   }catch(e){
     SF_FAILED=true;SF=null;SF_CB=null;fallback();
@@ -405,11 +434,11 @@ function startBotGame(){
   initSF();
   FLIPPED=BOT_COLOR==='black'; // user perspective
   fullReset();
-  BOT_ACTIVE=true;
+  BOT_ACTIVE=true;BOT_GAME_COLOR=BOT_COLOR;
   BOT_LOG=[];
   BOT_THINKING=false;
   document.getElementById('revcard').classList.add('hidden');
-  setStat('You are '+BOT_COLOR+'. Skill: '+BOT_LABEL,'info');
+  const bm='You are '+BOT_COLOR+'. Skill: '+BOT_LABEL;setStat(bm,'info');setCoach(bm);
   if(BOT_COLOR==='black')setTimeout(botThink,500);
 }
 
@@ -444,6 +473,7 @@ function doBotPlayerMove(uci){
   FEN=nf;HIST.push(nf);SANS.push(san);
   SEL=null;LDOTS=[];
   refreshPanel();drawBoard();drawMoveList();
+  setCoach('You played '+san+'. '+BOT_LABEL+' is thinking…');
   if(!legalMoves(nf).length){endBot();return;}
   setTimeout(botThink,360);
 }
@@ -464,7 +494,7 @@ function botThink(){
     FEN=nf;HIST.push(nf);SANS.push(san);
     refreshPanel();drawBoard();drawMoveList();
     if(!legalMoves(nf).length){endBot();return;}
-    setStat('Your turn.','info');
+    setStat('Your turn.','info');setCoach('Bot played '+san+'. Your turn.');
   });
 }
 
@@ -474,50 +504,173 @@ function endBot(){
   document.getElementById('revbtn').classList.remove('hidden');
 }
 
-function reviewMoveScore(fen,uci){
-  const{turn,bd}=parseFen(fen);const tf=uci.charCodeAt(2)-97,tr=+uci[3]-1;
-  const captured=GP(bd,tr,tf),nf=applyUci(fen,uci);
-  let s=staticEval(nf,turn)+(captured?materialValue(captured)*.7:0)+(inCheck(nf,turn==='w'?'b':'w')?35:0);
-  const replies=legalMoves(nf);
-  if(replies.length){let worst=Infinity;for(const r of replies.slice(0,36)){worst=Math.min(worst,staticEval(applyUci(nf,r),turn));}if(worst<Infinity)s=.55*s+.45*worst;}
-  return s;
+function sfAnalyzePosition(fen,cb){
+  // Review never substitutes the lightweight fallback evaluator for Stockfish.
+  // If the real engine is unavailable, return null so the UI does not display
+  // fake precision such as +0.03.
+  if(!SF||SF_FAILED){cb(null);return;}
+  SF_LAST_INFO=null;
+  SF_CB=(move,info)=>cb({best:move,info});
+  try{
+    SF.postMessage('setoption name Skill Level value 20');
+    SF.postMessage('position fen '+fen);
+    SF.postMessage('go movetime 220');
+    clearTimeout(SF_TIMER);
+    SF_TIMER=setTimeout(()=>{
+      if(SF_CB){SF_CB=null;SF_LAST_INFO=null;cb(null);}
+    },2400);
+  }catch(e){SF_FAILED=true;SF=null;SF_CB=null;cb(null);}
+}
+
+function infoWhiteEval(fen,info){
+  if(!info)return null;
+  let v;
+  if(info.type==='mate')v=(info.value>0?99:-99);
+  else v=info.value/100;
+  return parseFen(fen).turn==='w'?v:-v;
+}
+
+function reviewGrade(loss){
+  if(loss==null)return{label:'Not analyzed',cls:'rn'};
+  if(loss<=.12)return{label:'Excellent',cls:'rg'};
+  if(loss<=.35)return{label:'Good',cls:'rg'};
+  if(loss<=.80)return{label:'Inaccuracy',cls:'rn'};
+  if(loss<=1.80)return{label:'Mistake',cls:'rb'};
+  return{label:'Blunder',cls:'rb'};
+}
+
+function pieceName(p){return({P:'pawn',N:'knight',B:'bishop',R:'rook',Q:'queen',K:'king'})[p?.toUpperCase()]||'piece';}
+function reviewExplanation(entry,beforeFen,afterFen,bestSan,loss,engineOK){
+  const {bd,turn}=parseFen(beforeFen);
+  const ff=entry.uci.charCodeAt(0)-97,fr=+entry.uci[1]-1,tf=entry.uci.charCodeAt(2)-97,tr=+entry.uci[3]-1;
+  const pc=GP(bd,fr,ff),cap=GP(bd,tr,tf);
+  const parts=[];
+  const node=DB[beforeFen];
+  if(node&&node.moves&&node.moves[entry.san]){
+    const why=stripHtml(node.note||'');
+    parts.push(why?'This is in your repertoire. '+why:'This move matches your stored repertoire.');
+  }else{
+    if(entry.san==='O-O'||entry.san==='O-O-O')parts.push('Castling improves king safety and connects the rooks.');
+    else if(cap)parts.push('This '+pieceName(pc)+' captures a '+pieceName(cap)+' on '+entry.uci.slice(2,4)+', changing the material balance.');
+    else if(pc&&pc.toUpperCase()==='N'&&((turn==='w'&&fr===0)||(turn==='b'&&fr===7)))parts.push('This develops a knight from its starting square and brings another piece into the game.');
+    else if(pc&&pc.toUpperCase()==='B'&&((turn==='w'&&fr===0)||(turn==='b'&&fr===7)))parts.push('This develops a bishop and improves coordination.');
+    else if(pc&&pc.toUpperCase()==='P'&&['c','d','e','f'].includes(entry.uci[0]))parts.push('This pawn move changes the center, so its main value depends on the squares and pawn breaks it creates.');
+    else parts.push('This move changes piece placement without an immediate material change.');
+  }
+  if(inCheck(afterFen,parseFen(afterFen).turn))parts.push('It also gives check, forcing an immediate response.');
+  if(engineOK&&bestSan){
+    if(bestSan===entry.san)parts.push('Stockfish also chose this as its first move.');
+    else if(loss!=null&&loss>.12)parts.push('Stockfish preferred '+bestSan+'; the move cost about '+loss.toFixed(2)+' pawns of evaluation at the review search depth.');
+    else parts.push('Stockfish slightly preferred '+bestSan+', but the evaluation difference was small.');
+  }else if(!engineOK){
+    parts.push('No numeric engine claim is shown because Stockfish review was unavailable in this browser session.');
+  }
+  return parts.join(' ');
+}
+
+function buildReviewFens(){
+  if(!BOT_LOG.length)return[];
+  const arr=[BOT_LOG[0].fen];
+  BOT_LOG.forEach(e=>arr.push(applyUci(e.fen,e.uci)));
+  return arr;
+}
+
+function reviewMoveLabel(i){
+  const e=BOT_LOG[i],p=parseFen(e.fen);
+  return p.fm+(p.turn==='w'?'. ':'… ')+e.san;
+}
+
+function renderReviewList(){
+  const el=document.getElementById('revlist');if(!el)return;el.innerHTML='';
+  BOT_LOG.forEach((e,i)=>{
+    const r=REVIEW_RESULTS[i]||{};
+    const div=document.createElement('button');div.type='button';div.className='ri reviewrow'+(REVIEW_INDEX===i+1?' active':'');
+    const owner=e.byBot?'Bot':'You';
+    let grade=r.grade|| (DB[e.fen]?.moves?.[e.san]?'Repertoire':'Analyzing…');
+    let cls=r.cls||'rn';
+    const evalTxt=r.evalAfter==null?'':(' · '+(r.evalAfter>=0?'+':'')+r.evalAfter.toFixed(2));
+    div.innerHTML='<span class="rm">'+reviewMoveLabel(i)+'</span> <span class="reviewowner">'+owner+'</span> <span class="'+cls+'">'+grade+'</span><span class="rn">'+evalTxt+'</span>';
+    div.onclick=()=>reviewGo(i+1);
+    el.appendChild(div);
+  });
+  const foot=document.createElement('div');foot.className='reviewfoot';
+  foot.textContent=(SF&& !SF_FAILED)?'Evaluations are from Stockfish in the browser. Positive favors White; negative favors Black.':'Stockfish review is unavailable, so ChessTool is intentionally hiding numeric evaluations instead of showing heuristic scores.';
+  el.appendChild(foot);
+}
+
+function renderReviewDetail(){
+  const pos=document.getElementById('reviewpos'),detail=document.getElementById('reviewdetail');if(!pos||!detail)return;
+  if(REVIEW_INDEX===0){pos.textContent='Starting position';detail.textContent='Use Next or tap a move to step through the game.';return;}
+  const i=REVIEW_INDEX-1,e=BOT_LOG[i],r=REVIEW_RESULTS[i]||{};
+  pos.textContent=reviewMoveLabel(i)+' · '+(e.byBot?'Bot':'You');
+  detail.innerHTML='<strong>'+(r.grade||'Analysis pending')+'</strong>'+(r.bestSan&&r.bestSan!==e.san?' · Best: '+r.bestSan:'')+(r.evalAfter!=null?' · Eval: '+(r.evalAfter>=0?'+':'')+r.evalAfter.toFixed(2):'')+'<div class="reviewexplain">'+(r.explanation||'Analysis is still running…')+'</div>';
+}
+
+function reviewGo(idx){
+  if(!REVIEW_FENS.length)return;
+  REVIEW_INDEX=Math.max(0,Math.min(REVIEW_FENS.length-1,idx));
+  FEN=REVIEW_FENS[REVIEW_INDEX];FLIPPED=BOT_GAME_COLOR==='black';SEL=null;LDOTS=[];
+  if(REVIEW_INDEX>0){const u=BOT_LOG[REVIEW_INDEX-1].uci;setLastUci(u);}else{LF=null;LT=null;}
+  refreshPanel();drawBoard();renderReviewList();renderReviewDetail();
+  setCoach(REVIEW_INDEX===0?'Game review: starting position.':'Reviewing '+reviewMoveLabel(REVIEW_INDEX-1)+'. Use Previous / Next or tap another move.');
+}
+function reviewStep(delta){reviewGo(REVIEW_INDEX+delta);}
+
+function analyzeReview(){
+  const eng=document.getElementById('reviewengine');
+  if(!SF||SF_FAILED){
+    if(eng)eng.textContent='Stockfish unavailable';
+    REVIEW_RESULTS=BOT_LOG.map((e,i)=>{
+      const before=REVIEW_FENS[i],after=REVIEW_FENS[i+1];
+      return{grade:DB[e.fen]?.moves?.[e.san]?'Repertoire':'Played',cls:DB[e.fen]?.moves?.[e.san]?'rg':'rn',evalAfter:null,bestSan:'',explanation:reviewExplanation(e,before,after,'',null,false)};
+    });
+    renderReviewList();renderReviewDetail();return;
+  }
+  if(eng)eng.textContent='Stockfish 0%';
+  const posResults=new Array(REVIEW_FENS.length);
+  let k=0;
+  function next(){
+    if(k>=REVIEW_FENS.length){
+      REVIEW_RESULTS=BOT_LOG.map((e,i)=>{
+        const before=posResults[i],after=posResults[i+1];
+        const mover=parseFen(e.fen).turn;
+        const eb=before?.eval,ea=after?.eval;
+        const loss=(eb==null||ea==null)?null:Math.max(0,mover==='w'?eb-ea:ea-eb);
+        const g=reviewGrade(loss);
+        const bestSan=before?.best?uci2san(e.fen,before.best):'';
+        const inBook=!!DB[e.fen]?.moves?.[e.san];
+        return{grade:inBook?'Repertoire':g.label,cls:inBook?'rg':g.cls,evalAfter:ea,bestSan,loss,explanation:reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,loss,true)};
+      });
+      if(eng)eng.textContent='Stockfish complete';renderReviewList();renderReviewDetail();return;
+    }
+    const fen=REVIEW_FENS[k],idx=k;
+    sfAnalyzePosition(fen,res=>{
+      posResults[idx]=res?{best:res.best,eval:infoWhiteEval(fen,res.info)}:{best:null,eval:null};
+      k++;if(eng)eng.textContent='Stockfish '+Math.round(100*k/REVIEW_FENS.length)+'%';next();
+    });
+  }
+  next();
 }
 
 function showReview(){
   if(!BOT_LOG.length){setStat('No game to review.','bad');return;}
+  BOT_ACTIVE=false;REVIEW_FENS=buildReviewFens();REVIEW_RESULTS=[];REVIEW_INDEX=0;
   document.getElementById('revcard').classList.remove('hidden');
-  const el=document.getElementById('revlist');el.innerHTML='';
-  BOT_LOG.forEach((e,i)=>{
-    const mn=Math.floor(i/2)+1,div=document.createElement('div');div.className='ri';
-    const rn=DB[e.fen],playedFen=applyUci(e.fen,e.uci);
-    const ev=staticEval(playedFen,'w')/100;
-    if(e.byBot){
-      div.innerHTML='<span class="rm">'+mn+'… '+e.san+'</span> <span class="rn">Bot · eval '+(ev>=0?'+':'')+ev.toFixed(2)+'</span>';
-    }else if(rn&&rn.moves[e.san]){
-      const why=stripHtml(rn.note||'');
-      div.innerHTML='<span class="rm">'+mn+'. '+e.san+'</span> <span class="rg">Repertoire ✓</span>'+(why?'<div class="reviewwhy">'+why+'</div>':'');
-    }else{
-      const best=localBestMove(e.fen,16);
-      const playedScore=reviewMoveScore(e.fen,e.uci),bestScore=best?reviewMoveScore(e.fen,best):playedScore;
-      const loss=Math.max(0,bestScore-playedScore);
-      let label='Good',cls='rg';
-      if(loss>=400){label='Blunder';cls='rb';}else if(loss>=220){label='Mistake';cls='rb';}else if(loss>=90){label='Inaccuracy';cls='rn';}
-      const bestSan=best?uci2san(e.fen,best):'';
-      div.innerHTML='<span class="rm">'+mn+'. '+e.san+'</span> <span class="'+cls+'">'+label+'</span> <span class="rn">· eval '+(ev>=0?'+':'')+ev.toFixed(2)+(bestSan&&bestSan!==e.san?' · local best '+bestSan:'')+'</span>';
-    }
-    el.appendChild(div);
-  });
-  const foot=document.createElement('div');foot.className='reviewfoot';foot.textContent='After the opening, grades use ChessTool’s local search/evaluation. They are training guidance, not a cloud-engine verdict.';el.appendChild(foot);
-} 
+  renderReviewList();reviewGo(0);analyzeReview();
+}
 
 // ─── PANEL / STATUS ──────────────────────────────────────────────────────────
 function refreshPanel(){
   const node=DB[FEN];
-  document.getElementById('opname').textContent=node?.name||'Unknown Position';
-  document.getElementById('opeco').textContent=node?.eco||'';
+  const name=node?.name||'Position';const eco=node?.eco||'';
+  document.getElementById('opname').textContent=name;
+  document.getElementById('opeco').textContent=eco;
   document.getElementById('note').innerHTML=node?.note||'<em>Position not in repertoire.</em>';
   document.getElementById('prog').style.width=Math.min(100,(SANS.length/12)*100)+'%';
+  const ho=document.getElementById('hudopening'),he=document.getElementById('hudeco');
+  if(ho)ho.textContent=name;if(he)he.textContent=eco;
 }
+function setCoach(msg){LAST_COACH=msg||'';const h=document.getElementById('hudmsg');if(h)h.textContent=LAST_COACH;}
 function setStat(msg,cls){const e=document.getElementById('stat');e.textContent=msg;e.className=cls||'';}
 function drawMoveList(){
   const el=document.getElementById('mvlist');el.innerHTML='';
@@ -570,9 +723,9 @@ function setMode(mode){
   show('hintbtn',mode!=='bot');
   document.getElementById('revcard').classList.add('hidden');
   fullReset();
-  if(mode==='drill'){buildLineSelector();setStat('TRAIN: choose lines, Start Session, then recall your moves. Wrong legal moves are explained and reset.','info');}
-  if(mode==='explorer'){buildLineSelector();setStat('STUDY: choose lines, Start Session. Your moves are shown with explanations; the opponent still autoplays random selected branches.','info');renderStudy();}
-  if(mode==='bot'){setStat('Set skill & color → New Game.','info');initSF();}
+  if(mode==='drill'){buildLineSelector();const m='TRAIN: choose lines, Start Session, then recall your moves. Wrong legal moves are explained and reset.';setStat(m,'info');setCoach(m);}
+  if(mode==='explorer'){buildLineSelector();const m='STUDY: choose lines, Start Session. Your moves are shown with explanations; the opponent autoplays random selected branches.';setStat(m,'info');setCoach(m);renderStudy();}
+  if(mode==='bot'){const m='Set skill & color → New Game.';setStat(m,'info');setCoach(m);initSF();}
 }
 
 function show(id,visible){
@@ -580,7 +733,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.2 loaded: branch-safe Train/Study + teach-and-reset mistakes + richer bot review');
+console.info('ChessTool V2.3 loaded: mobile coaching + family quick-select + line completion + engine-backed review');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
@@ -588,4 +741,4 @@ buildLineSelector();
 drawBoard();
 refreshPanel();
 drawMoveList();
-setStat('TRAIN: choose lines and press Start Session.','info');
+setStat('TRAIN: choose lines and press Start Session.','info');setCoach('Choose English only, Caro-Kann only, or All, then Start Session.');
