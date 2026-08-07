@@ -86,3 +86,8 @@ nav{display:flex;gap:5px;flex-wrap:wrap}
 .qmovechip{background:var(--mbg);border:1px solid var(--bdr);border-radius:4px;padding:7px 9px;font-family:'JetBrains Mono',monospace;font-size:.78rem;color:var(--txt)}
 .qmovechip span{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;border-radius:50%;background:var(--blu);color:white;margin-right:7px;font-size:.68rem}
 @media(max-width:800px){.sq.qdest::before{border-width:2px}.qbadge{right:2px;top:2px;min-width:15px;height:15px;line-height:15px;font-size:9px}.qmovelist{grid-template-columns:1fr 1fr}}
+
+/* V2.2 study/review coaching */
+.studywhy{margin-top:10px;padding:9px 10px;border-left:3px solid var(--acc);background:var(--mbg);font-size:.8rem;line-height:1.5;color:var(--txt)}
+.reviewwhy{margin-top:4px;color:var(--muted);font-size:.76rem;line-height:1.45;padding-left:4px}
+.reviewfoot{margin-top:10px;padding-top:8px;border-top:1px solid var(--bdr);color:var(--muted);font-size:.72rem;line-height:1.45}

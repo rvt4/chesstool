@@ -3,19 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChessTool V2.1</title>
+<title>ChessTool V2.2</title>
 <link rel="stylesheet" href="styles.css">
 
 </head>
 <body>
 <header>
-  <div class="logo">♟ ChessTool <small>English · Caro-Kann · Plans · V2.1</small></div>
+  <div class="logo">♟ ChessTool <small>English · Caro-Kann · V2.2</small></div>
   <nav>
     <button class="nb on"  onclick="setMode('drill')">Train</button>
     <button class="nb"     onclick="setMode('explorer')">Study</button>
-    <button class="nb"     onclick="setMode('quiz')">Quiz</button>
-    <button class="nb"     onclick="setMode('plans')">Plans</button>
-    <button class="nb"     onclick="setMode('bot')">vs Bot</button>
+    <button class="nb"     onclick="setMode('bot')">Play vs Bot</button>
   </nav>
 </header>
 <div class="app">
@@ -34,8 +32,7 @@
       <button class="cb" onclick="doReset()">↺ Reset</button>
       <button class="cb" id="hintbtn" onclick="doHint()">💡 Hint</button>
       <button class="cb" onclick="doFlip()">⇅ Flip</button>
-      <button class="cb p hidden" id="colorbtn" onclick="toggleSide()">White</button>
-      <button class="cb p hidden" id="randbtn"  onclick="startRandom()">▶ Random Line</button>
+      <button class="cb p hidden" id="randbtn"  onclick="startRandom()">▶ Start Session</button>
       <button class="cb p hidden" id="newgamebtn" onclick="startBotGame()">▶ New Game</button>
       <button class="cb   hidden" id="revbtn"   onclick="showReview()">🔍 Review</button>
     </div>
@@ -54,36 +51,15 @@
     <div class="card"><div class="ch">Moves</div><div class="cb2"><div id="mvlist"></div></div></div>
     <!-- drill line picker -->
     <div class="card" id="linecard">
-      <div class="ch">Training Lines · answers hidden</div>
+      <div class="ch">Selected Repertoire Lines</div>
       <div class="cb2"><div id="linesel"></div></div>
     </div>
     <!-- explorer tree -->
     <div class="card hidden" id="expcard">
-      <div class="ch">Study Repertoire · answers shown</div>
-      <div class="cb2"><div id="tree"></div></div>
-    </div>
-    <!-- quiz -->
-    <div class="card hidden" id="quizcard">
-      <div class="ch"><span>Quiz</span><span id="qsc" style="color:var(--acc);font-size:.8rem">0 / 0</span></div>
-      <div class="cb2">
-        <div id="qq" style="margin-bottom:10px;font-size:.84rem"></div>
-        <div id="qopts" class="qmovelist"></div>
-      </div>
+      <div class="ch">Study · recommended moves & explanations</div>
+      <div class="cb2"><div id="tree"></div><div id="studyplan" style="margin-top:10px"></div></div>
     </div>
     <!-- bot settings -->
-    <!-- plans -->
-    <div class="card hidden" id="plancard">
-      <div class="ch"><span>Middlegame Plans</span><span id="psc" style="color:var(--acc);font-size:.8rem">0 / 0</span></div>
-      <div class="cb2">
-        <div id="planq" class="planq"></div>
-        <div id="planopts"></div>
-        <button class="cb p" id="nextplan" onclick="startPlanQuiz()" style="width:100%;margin-top:7px">Next Position</button>
-      </div>
-    </div>
-    <div class="card hidden" id="planinfocard">
-      <div class="ch">Position Blueprint</div>
-      <div class="cb2" id="planinfo"></div>
-    </div>
     <div class="card hidden" id="botcard">
       <div class="ch">Bot Settings</div>
       <div class="cb2" style="display:flex;flex-direction:column;gap:9px">

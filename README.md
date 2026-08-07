@@ -1,35 +1,29 @@
-# ChessTool V2
+# ChessTool V2.2
 
-Personal English Opening + Caro-Kann repertoire and middlegame-plan trainer.
+Personal English Opening / Caro-Kann repertoire trainer.
 
-## GitHub Pages structure
+## Modes
 
-Upload every file/folder in this package to the root of the repository while preserving the folders:
+- **Train** — choose repertoire lines, start a session, and recall your moves from memory. The opponent automatically chooses random compatible continuations from the lines you selected. Any legal move can be played; a repertoire miss is shown, explained, and then the position resets so you can retry.
+- **Study** — same autoplay/session engine, but your recommended repertoire moves and explanations are visible. Stored middlegame blueprints appear when the position reaches one of the plan structures.
+- **Play vs Bot** — play a complete game. Game Review grades repertoire moves during the opening and gives local-search move grades/evaluations after the game leaves the repertoire.
 
-```
-index.html
-styles.css
-js/core.js
-js/app.js
-data/repertoire.js
-data/plans.js
-README.md
-```
+## Files
 
-GitHub Pages can continue deploying from `main` and `/(root)`.
+- `index.html` — UI shell
+- `styles.css` — styling
+- `js/core.js` — chess rules, legal moves, SAN/FEN handling, repertoire registration
+- `js/app.js` — Train/Study session engine, bot, review, UI behavior
+- `data/repertoire.js` — English and Caro-Kann repertoire lines
+- `data/plans.js` — middlegame-plan knowledge
 
-## Architecture
+## V2.2 changes
 
-- `js/core.js` — board pieces, FEN/legal-move engine, repertoire registration helpers
-- `data/repertoire.js` — English/Caro-Kann opening tree and drill lines
-- `data/plans.js` — middlegame structure/plan knowledge
-- `js/app.js` — UI, drill/explorer/quiz/plans/bot behavior and progress
-- `styles.css` — layout and mobile styles
-
-V2 intentionally separates knowledge from the chess/UI engine so the repertoire can grow without turning `index.html` into one fragile file.
-
-## V2.1
-- Renamed Drill → **Train** and Explorer → **Study** to clarify their roles.
-- Train hides answers and auto-plays the opponent; Study shows the repertoire tree and never auto-plays.
-- Quiz is now board-based: four legal candidate moves are highlighted and you answer by moving the piece.
-- Bot mode no longer treats a blocked Stockfish web worker as game over. It uses a same-origin Blob worker when possible and a built-in fallback engine otherwise.
+- Removed separate Quiz and Plans navigation; plan teaching is folded into Study.
+- Train and Study now both autoplay the opponent.
+- Opponent choices are random only among selected lines that match the current move history.
+- Users can make any legal move in Train/Study.
+- Wrong repertoire moves are displayed, explained, then automatically rewound for another try.
+- Rebuilt the English vs `1...e5` main branch as a coherent Four Knights line.
+- Expanded selected drill definitions to use their full stored continuations.
+- Game Review no longer labels every post-opening player move simply “Out of book”; it provides a local-search grade, evaluation, and suggested local-best move when appropriate.
