@@ -27,3 +27,9 @@ GitHub Pages can continue deploying from `main` and `/(root)`.
 - `styles.css` — layout and mobile styles
 
 V2 intentionally separates knowledge from the chess/UI engine so the repertoire can grow without turning `index.html` into one fragile file.
+
+## V2.1
+- Renamed Drill → **Train** and Explorer → **Study** to clarify their roles.
+- Train hides answers and auto-plays the opponent; Study shows the repertoire tree and never auto-plays.
+- Quiz is now board-based: four legal candidate moves are highlighted and you answer by moving the piece.
+- Bot mode no longer treats a blocked Stockfish web worker as game over. It uses a same-origin Blob worker when possible and a built-in fallback engine otherwise.

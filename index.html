@@ -3,16 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChessTool V2</title>
+<title>ChessTool V2.1</title>
 <link rel="stylesheet" href="styles.css">
 
 </head>
 <body>
 <header>
-  <div class="logo">♟ ChessTool <small>English · Caro-Kann · Plans · V2</small></div>
+  <div class="logo">♟ ChessTool <small>English · Caro-Kann · Plans · V2.1</small></div>
   <nav>
-    <button class="nb on"  onclick="setMode('drill')">Drill</button>
-    <button class="nb"     onclick="setMode('explorer')">Explorer</button>
+    <button class="nb on"  onclick="setMode('drill')">Train</button>
+    <button class="nb"     onclick="setMode('explorer')">Study</button>
     <button class="nb"     onclick="setMode('quiz')">Quiz</button>
     <button class="nb"     onclick="setMode('plans')">Plans</button>
     <button class="nb"     onclick="setMode('bot')">vs Bot</button>
@@ -54,12 +54,12 @@
     <div class="card"><div class="ch">Moves</div><div class="cb2"><div id="mvlist"></div></div></div>
     <!-- drill line picker -->
     <div class="card" id="linecard">
-      <div class="ch">Lines to Drill</div>
+      <div class="ch">Training Lines · answers hidden</div>
       <div class="cb2"><div id="linesel"></div></div>
     </div>
     <!-- explorer tree -->
     <div class="card hidden" id="expcard">
-      <div class="ch">Continuations</div>
+      <div class="ch">Study Repertoire · answers shown</div>
       <div class="cb2"><div id="tree"></div></div>
     </div>
     <!-- quiz -->
@@ -67,7 +67,7 @@
       <div class="ch"><span>Quiz</span><span id="qsc" style="color:var(--acc);font-size:.8rem">0 / 0</span></div>
       <div class="cb2">
         <div id="qq" style="margin-bottom:10px;font-size:.84rem"></div>
-        <div id="qopts"></div>
+        <div id="qopts" class="qmovelist"></div>
       </div>
     </div>
     <!-- bot settings -->
