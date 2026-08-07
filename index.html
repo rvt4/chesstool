@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChessTool V2.3</title>
+<title>ChessTool V2.4</title>
 <link rel="stylesheet" href="styles.css">
 
 </head>
 <body>
 <header>
-  <div class="logo">♟ ChessTool <small>English · Caro-Kann · V2.3</small></div>
+  <div class="logo">♟ ChessTool <small>English · Caro-Kann · V2.4</small></div>
   <nav>
     <button class="nb on"  onclick="setMode('drill')">Train</button>
     <button class="nb"     onclick="setMode('explorer')">Study</button>
@@ -98,9 +98,10 @@
       <div class="cb2" style="display:flex;flex-direction:column;gap:9px">
         <div style="font-size:.77rem;color:var(--muted)">Skill</div>
         <div class="skrow">
-          <button class="skb on" id="sk0" onclick="setBotSkill(1,'Beginner')">Beginner</button>
-          <button class="skb"    id="sk1" onclick="setBotSkill(8,'Club')">Club</button>
-          <button class="skb"    id="sk2" onclick="setBotSkill(16,'Strong')">Strong</button>
+          <button class="skb" id="sk0" onclick="setBotSkill(4,'1400')">1400</button>
+          <button class="skb on" id="sk1" onclick="setBotSkill(10,'1600')">1600</button>
+          <button class="skb" id="sk2" onclick="setBotSkill(16,'1800')">1800</button>
+          <button class="skb" id="sk3" onclick="setBotSkill(20,'Full')">Full</button>
         </div>
         <div style="font-size:.77rem;color:var(--muted);margin-top:3px">Play as</div>
         <div class="skrow">

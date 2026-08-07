@@ -1,40 +1,16 @@
-# ChessTool V2.3
+# ChessTool V2.4
 
-Personal English Opening / Caro-Kann repertoire trainer.
+Personal English Opening + Caro-Kann trainer.
 
-## Modes
+## V2.4
+- Study now flows directly from the opening into a **Middlegame Lab** for roughly 10 more moves (about 20 plies).
+- Middlegame Lab keeps the strategic blueprint visible: goal, pawn breaks, piece map, opponent plan, trigger, and common mistake.
+- Bot presets: 1400 / 1600 / 1800 / Full.
+- Game Review now uses Stockfish depth 14 rather than a 220 ms search.
+- Mate evaluations display as M# / -M# rather than fake +99 scores.
+- Move grades use estimated winning-chance loss, which is more stable than raw pawn thresholds.
+- Repertoire is a tag; it no longer automatically overrides the engine's quality grade.
+- Review explanations include strategic move descriptions and engine alternatives.
+- Positive evaluation = White better; negative = Black better.
 
-- **Train** — choose repertoire lines, start a session, and recall your moves from memory. The opponent automatically chooses random compatible continuations from the lines you selected. Any legal move can be played; a repertoire miss is shown, explained, and then the position resets so you can retry.
-- **Study** — same autoplay/session engine, but your recommended repertoire moves and explanations are visible. Stored middlegame blueprints appear when the position reaches one of the plan structures.
-- **Play vs Bot** — play a complete game. Game Review grades repertoire moves during the opening and gives local-search move grades/evaluations after the game leaves the repertoire.
-
-## Files
-
-- `index.html` — UI shell
-- `styles.css` — styling
-- `js/core.js` — chess rules, legal moves, SAN/FEN handling, repertoire registration
-- `js/app.js` — Train/Study session engine, bot, review, UI behavior
-- `data/repertoire.js` — English and Caro-Kann repertoire lines
-- `data/plans.js` — middlegame-plan knowledge
-
-## V2.3 changes
-
-- Removed separate Quiz and Plans navigation; plan teaching is folded into Study.
-- Train and Study now both autoplay the opponent.
-- Opponent choices are random only among selected lines that match the current move history.
-- Users can make any legal move in Train/Study.
-- Wrong repertoire moves are displayed, explained, then automatically rewound for another try.
-- Rebuilt the English vs `1...e5` main branch as a coherent Four Knights line.
-- Expanded selected drill definitions to use their full stored continuations.
-- Game Review no longer labels every post-opening player move simply “Out of book”; it provides a local-search grade, evaluation, and suggested local-best move when appropriate.
-
-
-## V2.3 changes
-- Correct chessboard light/dark square parity in both orientations.
-- One-tap English-only, Caro-Kann-only, or All repertoire selection.
-- Mobile live coaching strip directly under the board; important feedback persists through the opponent reply.
-- Study sessions now stop at the actual end of the selected repertoire branch.
-- Game Review no longer uses the old material heuristic for fake decimal evaluations. Numeric scores are shown only when Stockfish analysis is available.
-- Interactive review navigation: click moves or use Previous/Next to put that position on the main board.
-- Review move ownership/numbering is derived from each move's FEN, so White/Black labels stay correct.
-- Move explanations combine repertoire notes, tactical/material context, move purpose, Stockfish preference, and evaluation loss.
+GitHub Pages: deploy `main` from `/ (root)`.
