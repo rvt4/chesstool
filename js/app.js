@@ -40,6 +40,9 @@ let LDOTS=[];      // [{r,f,san,nextFen}] legal dot squares
 let FLIPPED=false; // board orientation — only user changes this
 let DRILL_COLOR='white'; // which side user drills as
 let SEL_LINES=new Set(DLINES.map(l=>l.id));
+let SESSION_COLOR='white';
+let SESSION_STARTED=false;
+let PRACTICE_LOCK=false;
 let LF=null,LT=null; // last move from/to squares
 
 // bot state
@@ -117,128 +120,123 @@ function drawCoords(){
   });
 }
 
-// ─── CLICK HANDLING ──────────────────────────────────────────────────────────
+// ─── TRAIN / STUDY ENGINE ───────────────────────────────────────────────────
+// Train and Study use the same repertoire-session engine:
+//   Train = answers hidden until you move.
+//   Study = the repertoire choices and strategic explanation are visible.
+// In both modes the opponent automatically chooses among SELECTED compatible
+// lines, so merged DB nodes can never jump into an unselected branch.
+
+function stripHtml(x){
+  const d=document.createElement('div');d.innerHTML=x||'';return(d.textContent||'').replace(/\s+/g,' ').trim();
+}
+
+function currentPracticeLines(){
+  if(!SESSION_STARTED)return[];
+  return DLINES.filter(l=>SEL_LINES.has(l.id)&&l.color===SESSION_COLOR&&
+    SANS.length<l.sans.length&&SANS.every((san,i)=>l.sans[i]===san));
+}
+
+function expectedPracticeMoves(){
+  return [...new Set(currentPracticeLines().map(l=>l.sans[SANS.length]).filter(Boolean))];
+}
+
+function explainExpectedMove(expected, node){
+  const why=stripHtml(node?.note||'');
+  const choice=expected.length===1?expected[0]:expected.join(' or ');
+  return 'Preferred repertoire move'+(expected.length>1?'s':'')+': '+choice+'.'+(why?' Why: '+why:'');
+}
+
+function renderStudy(){
+  const el=document.getElementById('tree');if(!el)return;
+  el.innerHTML='';
+  if(MODE!=='explorer')return;
+  if(!SESSION_STARTED){el.innerHTML='<span class="tlbl">Choose lines and press Start Session.</span>';return;}
+  const{turn}=parseFen(FEN),userTurn=SESSION_COLOR==='white'?'w':'b';
+  if(turn!==userTurn){el.innerHTML='<span class="tlbl">Opponent is choosing a repertoire continuation…</span>';return;}
+  const moves=expectedPracticeMoves();
+  if(!moves.length){el.innerHTML='<span class="tlbl">End of selected repertoire line.</span>';renderIntegratedPlan();return;}
+  const lbl=document.createElement('div');lbl.className='tlbl';lbl.textContent='Recommended move'+(moves.length>1?'s':'')+':';el.appendChild(lbl);
+  moves.forEach(san=>{const m=document.createElement('span');m.className='tm ml';m.textContent=san;el.appendChild(m);});
+  const node=DB[FEN];
+  const why=stripHtml(node?.note||'');
+  if(why){const d=document.createElement('div');d.className='studywhy';d.textContent=why;el.appendChild(d);}
+  renderIntegratedPlan();
+}
+
+function renderIntegratedPlan(){
+  const host=document.getElementById('studyplan');if(!host)return;
+  host.innerHTML='';
+  if(MODE!=='explorer')return;
+  const plan=PLAN_DB.find(p=>fenFromSans(p.sans)===FEN);
+  if(!plan){host.innerHTML='<span class="tlbl">A middlegame blueprint will appear here when this line reaches a stored strategic structure.</span>';return;}
+  host.innerHTML=`<div class="planmeta"><div class="planbox"><b>Main goal</b><span>${plan.goal}</span></div><div class="planbox"><b>Pawn breaks</b><span>${plan.breaks}</span></div><div class="planbox"><b>Piece map</b><span>${plan.pieces}</span></div><div class="planbox"><b>Opponent wants</b><span>${plan.opp}</span></div><div class="planbox"><b>Trigger</b><span>${plan.trigger}</span></div><div class="planbox"><b>Avoid</b><span>${plan.mistake}</span></div></div>`;
+}
+
 function onSqClick(rank,file){
-  if(MODE==='quiz'){quizClick(rank,file);return;}
-  if(MODE==='plans')return;
   if(MODE==='bot'){botClick(rank,file);return;}
+  if(MODE!=='drill'&&MODE!=='explorer')return;
+  if(!SESSION_STARTED||PRACTICE_LOCK)return;
   const{bd,turn}=parseFen(FEN);
-
-  // In Drill, the user's color is fixed. If it is the repertoire/opponent's
-  // turn, ignore board taps and let drillAutoReply make that move.
-  if(MODE==='drill'){
-    const userTurn=DRILL_COLOR==='white'?'w':'b';
-    FLIPPED=(DRILL_COLOR==='black');
-    if(turn!==userTurn){
-      SEL=null;LDOTS=[];drawBoard();
-      return;
-    }
-  }
-
+  const userTurn=SESSION_COLOR==='white'?'w':'b';
+  if(turn!==userTurn)return;
   const p=GP(bd,rank,file);
 
   if(SEL){
     const hit=LDOTS.find(d=>d.r===rank&&d.f===file);
-    if(hit){execMove(hit.san,hit.nextFen);return;}
-    if(p&&friendly(p,turn)){SEL={r:rank,f:file};LDOTS=getRepDots(rank,file);drawBoard();return;}
+    if(hit){handlePracticeMove(hit.uci);return;}
+    if(p&&friendly(p,turn)){SEL={r:rank,f:file};LDOTS=getLegalDots(rank,file);drawBoard();return;}
     SEL=null;LDOTS=[];drawBoard();return;
   }
-  if(p&&friendly(p,turn)){SEL={r:rank,f:file};LDOTS=getRepDots(rank,file);drawBoard();}
+  if(p&&friendly(p,turn)){SEL={r:rank,f:file};LDOTS=getLegalDots(rank,file);drawBoard();}
 }
 
-// Get repertoire move dots from a square
-// Uses san2uci which validates against actual legal moves — fixes Bg2 etc.
-function getRepDots(fromR,fromF){
-  const node=DB[FEN];if(!node)return[];
-  const dots=[];
-  for(const[san,nextFen]of Object.entries(node.moves)){
-    const uci=san2uci(FEN,san);
-    if(!uci)continue;
-    if(uci.charCodeAt(0)-97===fromF&&+uci[1]-1===fromR){
-      dots.push({r:+uci[3]-1,f:uci.charCodeAt(2)-97,san,nextFen});
-    }
-  }
-  return dots;
+function getLegalDots(fromR,fromF){
+  return legalMoves(FEN)
+    .filter(uci=>uci.charCodeAt(0)-97===fromF&&+uci[1]-1===fromR)
+    .map(uci=>({r:+uci[3]-1,f:uci.charCodeAt(2)-97,uci,san:uci2san(FEN,uci)}));
 }
 
-function setLastMove(san){
-  const uci=san2uci(FEN,san);
-  if(!uci){LF=null;LT=null;return;}
+function setLastUci(uci){
   LF={r:+uci[1]-1,f:uci.charCodeAt(0)-97};
   LT={r:+uci[3]-1,f:uci.charCodeAt(2)-97};
 }
 
-// Core move executor — NO board flipping here
-function execMove(san,nextFen){
-  setLastMove(san);
-  FEN=nextFen;HIST.push(nextFen);SANS.push(san);
-  SEL=null;LDOTS=[];
-  // Drill orientation is fixed to the side being trained.
-  // A move must never change the player's viewing side.
-  if(MODE==='drill') FLIPPED=(DRILL_COLOR==='black');
-  refreshPanel();drawBoard();drawMoveList();
-
-  if(MODE==='drill'){
-    setStat('✓ Correct!','ok');
-    setTimeout(drillAutoReply,450);
-  } else if(MODE==='explorer'){
-    setStat("Study mode — choose either side's next repertoire move.",'info');
-    renderTree();
-  }
-}
-
-// ─── DRILL ───────────────────────────────────────────────────────────────────
-function drillAutoReply(){
-  // Lock orientation before and after every automatic repertoire reply.
-  FLIPPED=(DRILL_COLOR==='black');
-  const{turn}=parseFen(FEN);
-  const dt=DRILL_COLOR==='white'?'w':'b';
-  if(turn===dt){setStat('Your turn — find the next move.','info');return;}
+function handlePracticeMove(uci){
+  const beforeFen=FEN;
+  const beforeHist=[...HIST],beforeSans=[...SANS];
+  const expected=expectedPracticeMoves();
+  const san=uci2san(FEN,uci);
   const node=DB[FEN];
-  if(!node||!Object.keys(node.moves).length){setStat('🏁 End of line! Reset or try Random Line.','info');return;}
-  const[san,nextFen]=Object.entries(node.moves)[0];
-  setLastMove(san);
-  FEN=nextFen;HIST.push(nextFen);SANS.push(san);
-  FLIPPED=(DRILL_COLOR==='black');
-  refreshPanel();drawBoard();drawMoveList();
-  const nn=DB[FEN];
-  if(!nn||!Object.keys(nn.moves).length)setStat('🏁 End of line! Reset or try Random Line.','info');
-  else setStat('Your turn — find the next move.','info');
-}
+  const correct=expected.includes(san);
+  const nf=applyUci(FEN,uci);
+  setLastUci(uci);
+  FEN=nf;HIST.push(nf);SANS.push(san);SEL=null;LDOTS=[];
+  drawBoard();drawMoveList();
 
-// ─── EXPLORER ────────────────────────────────────────────────────────────────
-function explorerAutoReply(){
-  const node=DB[FEN];
-  if(!node||!Object.keys(node.moves).length){
-    setStat('End of repertoire line.','info');renderTree();return;
+  if(correct){
+    refreshPanel();
+    const msg=MODE==='explorer'?'✓ '+san+' — '+(stripHtml(node?.note)||'matches your repertoire.'):'✓ Correct: '+san;
+    setStat(msg,'ok');
+    renderStudy();
+    setTimeout(practiceAutoReply,450);
+    return;
   }
-  const[san,nextFen]=Object.entries(node.moves)[0];
-  setLastMove(san);
-  FEN=nextFen;HIST.push(nextFen);SANS.push(san);
-  refreshPanel();drawBoard();drawMoveList();
-  setStat('Computer played '+san+'. Click your next move below.','info');
-  renderTree();
+
+  // A wrong repertoire move is still allowed on the board first. Then explain
+  // it and restore the exact pre-mistake position so the learner can retry.
+  PRACTICE_LOCK=true;
+  const explanation=explainExpectedMove(expected,node);
+  setStat('✗ '+san+' is legal, but it leaves your selected repertoire. '+explanation,'bad');
+  document.getElementById('note').innerHTML='<strong>Why this is a miss:</strong> '+explanation;
+  setTimeout(()=>{
+    FEN=beforeFen;HIST=beforeHist;SANS=beforeSans;SEL=null;LDOTS=[];LF=null;LT=null;PRACTICE_LOCK=false;
+    refreshPanel();drawBoard();drawMoveList();renderStudy();
+    setStat('Try the position again.','info');
+  },2400);
 }
 
-function renderTree(){
-  const el=document.getElementById('tree');el.innerHTML='';
-  const node=DB[FEN];
-  if(!node||!Object.keys(node.moves).length){
-    el.innerHTML='<span class="tlbl">End of repertoire</span>';return;
-  }
-  const{turn}=parseFen(FEN);
-  const lbl=document.createElement('span');lbl.className='tlbl';
-  lbl.textContent=(turn==='w'?'White':'Black')+' to move:';
-  el.appendChild(lbl);
-  Object.entries(node.moves).forEach(([san,nextFen],i)=>{
-    const m=document.createElement('span');
-    m.className='tm'+(i===0?' ml':'');m.textContent=san;
-    m.onclick=()=>execMove(san,nextFen);
-    el.appendChild(m);
-  });
-}
-
-// ─── RANDOM LINE DRILL ───────────────────────────────────────────────────────
+// ─── LINE SELECTION / SESSION START ──────────────────────────────────────────
 function buildLineSelector(){
   const el=document.getElementById('linesel');el.innerHTML='';
   const grps={};
@@ -246,146 +244,60 @@ function buildLineSelector(){
   for(const[g,ls]of Object.entries(grps)){
     const lbl=document.createElement('div');lbl.className='glbl';lbl.textContent=g;el.appendChild(lbl);
     ls.forEach(l=>{
-      const chip=document.createElement('label');
-      chip.className='lchip'+(SEL_LINES.has(l.id)?' on':'');
+      const chip=document.createElement('label');chip.className='lchip'+(SEL_LINES.has(l.id)?' on':'');
       const cb=document.createElement('input');cb.type='checkbox';cb.checked=SEL_LINES.has(l.id);
       cb.onchange=()=>{if(cb.checked){SEL_LINES.add(l.id);chip.classList.add('on');}else{SEL_LINES.delete(l.id);chip.classList.remove('on');}};
-      chip.appendChild(cb);
-      const s=document.createElement('span');s.textContent=l.label;chip.appendChild(s);
-      el.appendChild(chip);
+      chip.appendChild(cb);const sp=document.createElement('span');sp.textContent=l.label;chip.appendChild(sp);el.appendChild(chip);
     });
   }
 }
 
 function startRandom(){
   const avail=DLINES.filter(l=>SEL_LINES.has(l.id));
-  if(!avail.length){setStat('Select at least one line!','bad');return;}
-  const line=avail[Math.floor(Math.random()*avail.length)];
-  DRILL_COLOR=line.color;
-  // Set board orientation based on which side we're drilling
-  FLIPPED=line.color==='black';
-  document.getElementById('colorbtn').textContent=line.color==='white'?'White':'Black';
-  fullReset();
-  setStat('Drilling: '+line.label,'info');
-  playUntilUserTurn(line.sans,0,line.color==='white'?'w':'b');
+  if(!avail.length){setStat('Select at least one line.','bad');return;}
+  // Pick which repertoire side to train, then keep ALL selected lines for that
+  // side alive. Opponent branches are sampled randomly as the game develops.
+  const seed=avail[Math.floor(Math.random()*avail.length)];
+  SESSION_COLOR=seed.color;DRILL_COLOR=seed.color;SESSION_STARTED=true;PRACTICE_LOCK=false;
+  FLIPPED=SESSION_COLOR==='black';
+  fullReset();SESSION_STARTED=true; // fullReset clears board state only; restore session flag
+  const family=SESSION_COLOR==='white'?'English as White':'Caro-Kann as Black';
+  setStat((MODE==='drill'?'TRAIN':'STUDY')+': '+family+' — opponent variations will be randomized from your selected lines.','info');
+  renderStudy();
+  setTimeout(practiceAutoReply,350);
 }
 
-function playUntilUserTurn(sanArr,idx,userTurn){
-  const{turn}=parseFen(FEN);
-  if(turn===userTurn){setStat('Your turn — find the next move.','info');return;}
-  if(idx>=sanArr.length){setStat('Your turn — find the next move.','info');return;}
-  const san=sanArr[idx];
+function practiceAutoReply(){
+  if(!SESSION_STARTED||PRACTICE_LOCK||(MODE!=='drill'&&MODE!=='explorer'))return;
+  FLIPPED=SESSION_COLOR==='black';
+  const{turn}=parseFen(FEN),userTurn=SESSION_COLOR==='white'?'w':'b';
+  if(turn===userTurn){
+    const moves=expectedPracticeMoves();
+    if(!moves.length){setStat('🏁 End of this selected repertoire branch. Start another session to get a new variation.','info');}
+    else setStat(MODE==='drill'?'Your turn — find your repertoire move.':'Your turn — recommended moves are shown below.','info');
+    renderStudy();drawBoard();return;
+  }
+  const lines=currentPracticeLines();
+  if(!lines.length){setStat('No selected line matches this position. Start a new session.','bad');return;}
+  const candidates=lines.map(l=>l.sans[SANS.length]).filter(Boolean);
+  if(!candidates.length){setStat('🏁 End of selected line.','info');return;}
+  // Pick a compatible line, not DB's first global move. This is what makes
+  // multiple selected variations genuinely random and prevents branch jumping.
+  const san=candidates[Math.floor(Math.random()*candidates.length)];
   const uci=san2uci(FEN,san);
-  if(!uci){setStat('Your turn — find the next move.','info');return;}
-  const nextFen=applyUci(FEN,uci);
-  setTimeout(()=>{
-    setLastMove(san);
-    FEN=nextFen;HIST.push(nextFen);SANS.push(san);
-    refreshPanel();drawBoard();drawMoveList();
-    playUntilUserTurn(sanArr,idx+1,userTurn);
-  },idx===0?220:430);
+  if(!uci){setStat('Repertoire data error at '+san+'.','bad');return;}
+  setLastUci(uci);
+  const nf=applyUci(FEN,uci);FEN=nf;HIST.push(nf);SANS.push(san);SEL=null;LDOTS=[];
+  refreshPanel();drawBoard();drawMoveList();renderStudy();
+  setStat('Opponent played '+san+'. Your turn.','info');
 }
 
-// ─── QUIZ ─────────────────────────────────────────────────────────────────────
-// Move-based quiz: four legal candidates are marked on the board. Select a
-// highlighted source piece, then move it to one of the numbered destinations.
-function startQuiz(){
-  const positions=Object.entries(DB).filter(([fen,n])=>
-    n.name&&fen!==INIT&&Object.keys(n.moves).length>0&&legalMoves(fen).length>=4
-  );
-  if(!positions.length){setStat('No quiz positions loaded.','bad');return;}
-
-  const[fen,node]=positions[Math.floor(Math.random()*positions.length)];
-  FEN=fen;HIST=[fen];SANS=[];SEL=null;LDOTS=[];LF=null;LT=null;
-  QUIZ_DONE=false;QUIZ_RESULT=null;QUIZ_OPTIONS=[];
-
-  const{turn}=parseFen(fen);
-  // Always face the side whose move is being tested.
-  FLIPPED=turn==='b';
-
-  const correctSan=Object.keys(node.moves)[0];
-  const correctUci=san2uci(fen,correctSan);
-  if(!correctUci){setTimeout(startQuiz,0);return;}
-
-  const legal=legalMoves(fen).map(uci=>({uci,san:uci2san(fen,uci)}));
-  const correct={uci:correctUci,san:correctSan,correct:true};
-
-  // Prefer distinct destination squares so the four board choices stay clear.
-  const shuffled=legal.filter(x=>x.uci!==correctUci).sort(()=>Math.random()-.5);
-  const usedDst=new Set([correctUci.slice(2,4)]);
-  const distractors=[];
-  for(const x of shuffled){
-    const dst=x.uci.slice(2,4);
-    if(usedDst.has(dst))continue;
-    usedDst.add(dst);distractors.push({...x,correct:false});
-    if(distractors.length===3)break;
-  }
-  // Extremely rare fallback if a position has fewer than four unique targets.
-  for(const x of shuffled){
-    if(distractors.length===3)break;
-    if(!distractors.some(d=>d.uci===x.uci))distractors.push({...x,correct:false});
-  }
-
-  QUIZ_OPTIONS=[correct,...distractors].sort(()=>Math.random()-.5).map((x,i)=>({...x,n:i+1}));
-  QUIZ_CORRECT=correctUci;
-
-  document.getElementById('opname').textContent=node.name||'';
-  document.getElementById('opeco').textContent=node.eco||'';
-  document.getElementById('prog').style.width='0%';
-  document.getElementById('note').innerHTML='<em>Find the repertoire move by moving a piece on the board.</em>';
-  document.getElementById('qq').innerHTML=
-    '<strong>'+node.name+'</strong>'+(node.eco?' ('+node.eco+')':'')+
-    '<br><span style="color:var(--muted)">'+(turn==='w'?'White':'Black')+' to move. Choose one of the four highlighted moves.</span>';
-
-  const optEl=document.getElementById('qopts');optEl.innerHTML='';
-  QUIZ_OPTIONS.forEach(o=>{
-    const chip=document.createElement('div');chip.className='qmovechip';
-    chip.innerHTML='<span>'+o.n+'</span>'+o.san;
-    optEl.appendChild(chip);
-  });
-
-  drawBoard();drawMoveList();
-  setStat('Move a highlighted piece to one of the numbered squares.','info');
-}
-
-function quizClick(rank,file){
-  if(QUIZ_DONE||!QUIZ_OPTIONS.length)return;
-  const{bd,turn}=parseFen(FEN);
-  const p=GP(bd,rank,file);
-
-  if(SEL){
-    const hit=LDOTS.find(d=>d.r===rank&&d.f===file);
-    if(hit){gradeQuizMove(hit);return;}
-
-    const newOpts=QUIZ_OPTIONS.filter(o=>+o.uci[1]-1===rank&&o.uci.charCodeAt(0)-97===file);
-    if(p&&friendly(p,turn)&&newOpts.length){
-      SEL={r:rank,f:file};
-      LDOTS=newOpts.map(o=>({r:+o.uci[3]-1,f:o.uci.charCodeAt(2)-97,uci:o.uci,san:o.san,n:o.n}));
-      drawBoard();return;
-    }
-    SEL=null;LDOTS=[];drawBoard();return;
-  }
-
-  const opts=QUIZ_OPTIONS.filter(o=>+o.uci[1]-1===rank&&o.uci.charCodeAt(0)-97===file);
-  if(p&&friendly(p,turn)&&opts.length){
-    SEL={r:rank,f:file};
-    LDOTS=opts.map(o=>({r:+o.uci[3]-1,f:o.uci.charCodeAt(2)-97,uci:o.uci,san:o.san,n:o.n}));
-    drawBoard();
-  }
-}
-
-function gradeQuizMove(hit){
-  QUIZ_DONE=true;Q_SCORE.t++;
-  const correct=hit.uci===QUIZ_CORRECT;
-  if(correct)Q_SCORE.c++;
-  QUIZ_RESULT={chosenUci:hit.uci,correctUci:QUIZ_CORRECT};
-  SEL=null;LDOTS=[];
-  document.getElementById('qsc').textContent=Q_SCORE.c+' / '+Q_SCORE.t;
-  const node=DB[FEN];
-  if(correct)setStat('✓ Correct! '+(node?.note||''),'ok');
-  else setStat('✗ You played '+hit.san+'. Repertoire move: '+uci2san(FEN,QUIZ_CORRECT)+'.','bad');
-  drawBoard();
-  setTimeout(startQuiz,2200);
+function doHint(){
+  if(MODE==='bot'){setStat('No hints in bot mode.','bad');return;}
+  if(!SESSION_STARTED){setStat('Start a training session first.','info');return;}
+  const moves=expectedPracticeMoves();
+  if(!moves.length){setStat('No more moves in this selected line.','info');return;}
+  const node=DB[FEN];setStat('💡 '+explainExpectedMove(moves,node),'info');
 }
 
 // ─── BOT MODE ─────────────────────────────────────────────────────────────────
@@ -562,24 +474,41 @@ function endBot(){
   document.getElementById('revbtn').classList.remove('hidden');
 }
 
+function reviewMoveScore(fen,uci){
+  const{turn,bd}=parseFen(fen);const tf=uci.charCodeAt(2)-97,tr=+uci[3]-1;
+  const captured=GP(bd,tr,tf),nf=applyUci(fen,uci);
+  let s=staticEval(nf,turn)+(captured?materialValue(captured)*.7:0)+(inCheck(nf,turn==='w'?'b':'w')?35:0);
+  const replies=legalMoves(nf);
+  if(replies.length){let worst=Infinity;for(const r of replies.slice(0,36)){worst=Math.min(worst,staticEval(applyUci(nf,r),turn));}if(worst<Infinity)s=.55*s+.45*worst;}
+  return s;
+}
+
 function showReview(){
   if(!BOT_LOG.length){setStat('No game to review.','bad');return;}
   document.getElementById('revcard').classList.remove('hidden');
   const el=document.getElementById('revlist');el.innerHTML='';
   BOT_LOG.forEach((e,i)=>{
-    const mn=Math.floor(i/2)+1;
-    const div=document.createElement('div');div.className='ri';
-    const rn=DB[e.fen];
-    let c='',cls='rn';
-    if(!e.byBot){
-      if(rn&&rn.moves[e.san]){c='In repertoire ✓';cls='rg';}
-      else if(rn){c='Deviation from repertoire';cls='rb';}
-      else{c='Out of book';cls='rn';}
-    }else{c='Bot played';}
-    div.innerHTML='<span class="rm">'+mn+(e.byBot?'… ':'. ')+e.san+'</span> <span class="'+cls+'">'+c+'</span>';
+    const mn=Math.floor(i/2)+1,div=document.createElement('div');div.className='ri';
+    const rn=DB[e.fen],playedFen=applyUci(e.fen,e.uci);
+    const ev=staticEval(playedFen,'w')/100;
+    if(e.byBot){
+      div.innerHTML='<span class="rm">'+mn+'… '+e.san+'</span> <span class="rn">Bot · eval '+(ev>=0?'+':'')+ev.toFixed(2)+'</span>';
+    }else if(rn&&rn.moves[e.san]){
+      const why=stripHtml(rn.note||'');
+      div.innerHTML='<span class="rm">'+mn+'. '+e.san+'</span> <span class="rg">Repertoire ✓</span>'+(why?'<div class="reviewwhy">'+why+'</div>':'');
+    }else{
+      const best=localBestMove(e.fen,16);
+      const playedScore=reviewMoveScore(e.fen,e.uci),bestScore=best?reviewMoveScore(e.fen,best):playedScore;
+      const loss=Math.max(0,bestScore-playedScore);
+      let label='Good',cls='rg';
+      if(loss>=400){label='Blunder';cls='rb';}else if(loss>=220){label='Mistake';cls='rb';}else if(loss>=90){label='Inaccuracy';cls='rn';}
+      const bestSan=best?uci2san(e.fen,best):'';
+      div.innerHTML='<span class="rm">'+mn+'. '+e.san+'</span> <span class="'+cls+'">'+label+'</span> <span class="rn">· eval '+(ev>=0?'+':'')+ev.toFixed(2)+(bestSan&&bestSan!==e.san?' · local best '+bestSan:'')+'</span>';
+    }
     el.appendChild(div);
   });
-}
+  const foot=document.createElement('div');foot.className='reviewfoot';foot.textContent='After the opening, grades use ChessTool’s local search/evaluation. They are training guidance, not a cloud-engine verdict.';el.appendChild(foot);
+} 
 
 // ─── PANEL / STATUS ──────────────────────────────────────────────────────────
 function refreshPanel(){
@@ -607,7 +536,7 @@ function goBack(){
   HIST.pop();SANS.pop();FEN=HIST[HIST.length-1];
   SEL=null;LDOTS=[];LF=null;LT=null;
   refreshPanel();drawBoard();drawMoveList();
-  if(MODE==='explorer')renderTree();
+  if(MODE==='explorer')renderStudy();
 }
 
 // fullReset resets position but NOT FLIPPED — FLIPPED is only changed by explicit user actions
@@ -618,63 +547,31 @@ function fullReset(){
 }
 
 function doReset(){
-  fullReset();
-  if(MODE==='drill') FLIPPED=(DRILL_COLOR==='black');
-  drawBoard();
-  if(MODE==='drill'&&DRILL_COLOR==='black'){setTimeout(()=>drillAutoReply(),300);}
-  if(MODE==='explorer'){renderTree();}
-  setStat('Reset.','info');
-}
-
-function doHint(){
-  if(MODE==='bot'){setStat('No hints in bot mode.','bad');return;}
-  if(MODE==='quiz'){setStat('Hint: the repertoire move is '+uci2san(FEN,QUIZ_CORRECT)+'.','info');return;}
-  const node=DB[FEN];
-  if(!node||!Object.keys(node.moves).length){setStat('No moves in repertoire here.','info');return;}
-  setStat('💡 Hint: try '+Object.keys(node.moves)[0],'info');
+  const wasSession=SESSION_STARTED;
+  fullReset();SESSION_STARTED=wasSession;
+  FLIPPED=SESSION_COLOR==='black';drawBoard();
+  if((MODE==='drill'||MODE==='explorer')&&SESSION_STARTED)setTimeout(practiceAutoReply,250);
+  renderStudy();setStat(SESSION_STARTED?'Session reset.':'Reset.','info');
 }
 
 function doFlip(){FLIPPED=!FLIPPED;drawBoard();}
 
-function toggleSide(){
-  DRILL_COLOR=DRILL_COLOR==='white'?'black':'white';
-  FLIPPED=DRILL_COLOR==='black';
-  document.getElementById('colorbtn').textContent=DRILL_COLOR==='white'?'White':'Black';
-  fullReset();
-  if(DRILL_COLOR==='black')setTimeout(()=>drillAutoReply(),350);
-  setStat('Playing as '+DRILL_COLOR+'. Make your moves.','info');
-}
 
 // ─── MODE SWITCHING ───────────────────────────────────────────────────────────
 function setMode(mode){
-  MODE=mode;BOT_ACTIVE=false;SEL=null;LDOTS=[];QUIZ_OPTIONS=[];QUIZ_RESULT=null;QUIZ_DONE=false;
-  // Only reset flip when switching away from bot mode or when going to explorer/quiz
-  if(mode==='drill'){FLIPPED=DRILL_COLOR==='black';}
-  // explorer and quiz now keep the current orientation
-  // bot mode flip is set when starting a game
-
-  document.querySelectorAll('.nb').forEach((b,i)=>b.classList.toggle('on',['drill','explorer','quiz','plans','bot'][i]===mode));
-
-  // card visibility
-  show('linecard',mode==='drill');
+  MODE=mode;BOT_ACTIVE=false;SEL=null;LDOTS=[];SESSION_STARTED=false;PRACTICE_LOCK=false;
+  document.querySelectorAll('.nb').forEach((b,i)=>b.classList.toggle('on',['drill','explorer','bot'][i]===mode));
+  show('linecard',mode==='drill'||mode==='explorer');
   show('expcard',mode==='explorer');
-  show('quizcard',mode==='quiz');
-  show('plancard',mode==='plans');
-  show('planinfocard',mode==='plans');
   show('botcard',mode==='bot');
-  show('colorbtn',mode==='drill');
-  show('randbtn',mode==='drill');
+  show('randbtn',mode==='drill'||mode==='explorer');
   show('newgamebtn',mode==='bot');
   show('revbtn',false);
   show('hintbtn',mode!=='bot');
   document.getElementById('revcard').classList.add('hidden');
-
   fullReset();
-
-  if(mode==='drill'){buildLineSelector();setStat('TRAIN: recall your move from memory; the opponent replies automatically.','info');}
-  if(mode==='explorer'){setStat('STUDY: browse either side freely; all repertoire continuations are shown.','info');renderTree();}
-  if(mode==='quiz'){startQuiz();}
-  if(mode==='plans'){setStat('Choose the plan that fits the position — then study the blueprint.','info');startPlanQuiz();}
+  if(mode==='drill'){buildLineSelector();setStat('TRAIN: choose lines, Start Session, then recall your moves. Wrong legal moves are explained and reset.','info');}
+  if(mode==='explorer'){buildLineSelector();setStat('STUDY: choose lines, Start Session. Your moves are shown with explanations; the opponent still autoplays random selected branches.','info');renderStudy();}
   if(mode==='bot'){setStat('Set skill & color → New Game.','info');initSF();}
 }
 
@@ -683,13 +580,12 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.1 loaded: move quizzes + resilient bot + distinct Train/Study modes');
+console.info('ChessTool V2.2 loaded: branch-safe Train/Study + teach-and-reset mistakes + richer bot review');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
 buildLineSelector();
-loadProgress();
 drawBoard();
 refreshPanel();
 drawMoveList();
-setStat('TRAIN: recall your move from memory; the opponent replies automatically.','info');
+setStat('TRAIN: choose lines and press Start Session.','info');
