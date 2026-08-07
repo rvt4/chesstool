@@ -86,7 +86,7 @@ nav{display:flex;gap:5px;flex-wrap:wrap}
 </head>
 <body>
 <header>
-  <div class="logo">♟ ChessTool <small>English · Caro-Kann · Plans · V1.1</small></div>
+  <div class="logo">♟ ChessTool <small>English · Caro-Kann · Plans · V1.2</small></div>
   <nav>
     <button class="nb on"  onclick="setMode('drill')">Drill</button>
     <button class="nb"     onclick="setMode('explorer')">Explorer</button>
@@ -247,7 +247,22 @@ function applyUci(fen,uci){
   const nh=(pc&&pc.toUpperCase()==='P')||cap?0:hm+1;
   const nf=fm+(turn==='b'?1:0);
   let fs='';
-  for(let r=7;r>=0;r--){let e=0;for(let f=0;f<8;f++){if(b[r][f]){if(e){fs+=e;e=0;}fs+=b[r][f];}else e++;}if(e)fs+=e;if(r>0)fs+='/';}
+  // parseFen stores rows in normal FEN order: index 0 = rank 8, index 7 = rank 1.
+  // Serialize in that SAME order. The old code iterated 7 -> 0, which physically
+  // inverted the position after every move and broke all repertoire FEN lookups.
+  for(let row=0;row<8;row++){
+    let e=0;
+    for(let f=0;f<8;f++){
+      if(b[row][f]){
+        if(e){fs+=e;e=0;}
+        fs+=b[row][f];
+      }else{
+        e++;
+      }
+    }
+    if(e)fs+=e;
+    if(row<7)fs+='/';
+  }
   return`${fs} ${nt} ${nc} ${nep} ${nh} ${nf}`;
 }
 
