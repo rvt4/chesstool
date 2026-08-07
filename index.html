@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChessTool V1</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=JetBrains+Mono:wght@400;600&family=Inter:wght@300;400;500;600&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#1C1410;--surf:#251A12;--bdr:#4A3728;
+  --ls:#F0D9B5;--ds:#B58863;
+  --acc:#D4A853;--acc2:#8B6914;
+  --txt:#E8DCCC;--muted:#9A8070;
+  --grn:#4CAF50;--red:#E53935;--blu:#5B8FD4;
+  --mbg:#160e06;
+}
+body{background:var(--bg);color:var(--txt);font-family:'Inter',sans-serif;min-height:100vh}
+header{display:flex;align-items:center;justify-content:space-between;padding:13px 26px;border-bottom:1px solid var(--bdr);background:var(--surf);flex-wrap:wrap;gap:8px}
+.logo{font-family:'Playfair Display',serif;font-size:1.25rem;color:var(--acc)}
+.logo small{color:var(--muted);font-size:.75rem;font-family:'Inter',sans-serif;margin-left:7px}
+nav{display:flex;gap:5px;flex-wrap:wrap}
+.nb{background:none;border:1px solid var(--bdr);color:var(--muted);padding:6px 13px;border-radius:4px;cursor:pointer;font-size:.77rem;letter-spacing:.05em;text-transform:uppercase;transition:all .15s;font-family:'Inter',sans-serif}
+.nb:hover{color:var(--txt);border-color:var(--muted)}
+.nb.on{background:var(--acc);color:#1C1410;border-color:var(--acc);font-weight:600}
+.app{display:grid;grid-template-columns:auto 1fr;gap:18px;max-width:1160px;margin:0 auto;padding:20px 16px;align-items:start}
+.bcol{display:flex;flex-direction:column;gap:11px}
+.bwrap{background:var(--surf);border:1px solid var(--bdr);border-radius:6px;padding:10px;display:inline-block}
+.bouter{display:flex;align-items:flex-start}
+.rcol{display:flex;flex-direction:column;width:18px;height:480px;justify-content:space-around;align-items:flex-end;padding-right:4px}
+.frow{display:flex;width:480px;justify-content:space-around;padding-top:3px}
+.coord{font-size:.63rem;color:var(--muted);font-family:'JetBrains Mono',monospace}
+#board{display:grid;grid-template-columns:repeat(8,60px);grid-template-rows:repeat(8,60px);border:2px solid var(--bdr);overflow:hidden;user-select:none}
+.sq{width:60px;height:60px;display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer}
+.sq.lt{background:var(--ls)}.sq.dk{background:var(--ds)}
+.sq.sel{outline:3px solid var(--acc);outline-offset:-3px;z-index:2}
+.sq.lf{background:rgba(212,168,83,.4)!important}.sq.lt2{background:rgba(212,168,83,.6)!important}
+.sq.dot::after{content:'';width:20px;height:20px;background:rgba(0,0,0,.22);border-radius:50%;position:absolute;pointer-events:none}
+.sq.cap::after{content:'';width:100%;height:100%;border:4px solid rgba(0,0,0,.25);position:absolute;inset:0;pointer-events:none}
+.psv{width:52px;height:52px;pointer-events:none;filter:drop-shadow(0 2px 3px rgba(0,0,0,.5))}
+.bctrl{display:flex;gap:6px;flex-wrap:wrap}
+.cb{background:var(--surf);border:1px solid var(--bdr);color:var(--txt);padding:7px 12px;border-radius:4px;cursor:pointer;font-size:.79rem;font-family:'Inter',sans-serif;transition:all .15s;white-space:nowrap}
+.cb:hover{border-color:var(--acc);color:var(--acc)}
+.cb.p{background:var(--acc);color:#1C1410;border-color:var(--acc);font-weight:600}.cb.p:hover{background:#c4983e}
+.panel{display:flex;flex-direction:column;gap:13px;min-width:295px}
+.card{background:var(--surf);border:1px solid var(--bdr);border-radius:6px;overflow:hidden}
+.ch{padding:9px 15px;border-bottom:1px solid var(--bdr);font-family:'JetBrains Mono',monospace;font-size:.67rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+.cb2{padding:13px 15px}
+#opname{font-family:'Playfair Display',serif;font-size:.97rem;color:var(--acc);margin-bottom:2px}
+#opeco{font-family:'JetBrains Mono',monospace;font-size:.68rem;color:var(--muted);margin-bottom:7px}
+.pw{background:var(--bg);border-radius:3px;height:5px;overflow:hidden;margin-bottom:10px}
+.pb{height:100%;background:var(--acc);border-radius:3px;transition:width .4s}
+#note{font-size:.83rem;line-height:1.65;color:var(--txt)}
+#note strong{color:var(--acc);font-family:'JetBrains Mono',monospace;font-size:.8rem}
+#note em{color:var(--muted)}
+#stat{font-size:.87rem;line-height:1.5;min-height:36px;padding:7px 10px;border-radius:4px;background:var(--mbg);border:1px solid var(--bdr)}
+#stat.ok{color:var(--grn);border-color:var(--grn)}
+#stat.bad{color:var(--red);border-color:var(--red)}
+#stat.info{color:var(--acc)}
+#mvlist{font-family:'JetBrains Mono',monospace;font-size:.79rem;line-height:1.9;max-height:155px;overflow-y:auto;display:flex;flex-wrap:wrap;gap:1px 3px;align-content:flex-start}
+.mn{color:var(--muted)}.mt{padding:1px 4px;border-radius:3px;cursor:pointer}.mt:hover{background:var(--mbg)}.mt.cur{background:var(--acc);color:#1C1410;font-weight:700}
+#linesel{display:flex;flex-direction:column;gap:4px}
+.glbl{font-size:.69rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-top:5px}
+.lchip{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:4px;border:1px solid var(--bdr);cursor:pointer;font-size:.79rem;background:var(--mbg);transition:border-color .15s}
+.lchip:hover{border-color:var(--acc)}.lchip.on{border-color:var(--acc);background:rgba(212,168,83,.1);color:var(--acc)}
+.lchip input{accent-color:var(--acc);width:13px;height:13px;cursor:pointer;flex-shrink:0}
+#tree{font-family:'JetBrains Mono',monospace;font-size:.79rem;max-height:190px;overflow-y:auto}
+.tm{display:inline-block;padding:2px 8px;margin:2px;border-radius:3px;border:1px solid var(--bdr);cursor:pointer;transition:all .12s}
+.tm:hover{background:var(--acc);color:#1C1410;border-color:var(--acc)}.tm.ml{border-color:var(--acc2);color:var(--acc)}
+.tlbl{color:var(--muted);font-size:.67rem;letter-spacing:.08em;text-transform:uppercase;margin:7px 0 3px;display:block}
+.skrow{display:flex;gap:5px;flex-wrap:wrap}
+.skb{flex:1;padding:7px;border:1px solid var(--bdr);background:var(--mbg);color:var(--txt);border-radius:4px;cursor:pointer;font-size:.79rem;font-family:'Inter',sans-serif;transition:all .15s;text-align:center}
+.skb:hover{border-color:var(--acc)}.skb.on{background:var(--acc);color:#1C1410;border-color:var(--acc);font-weight:600}
+#revlist{font-size:.81rem;line-height:1.6;max-height:210px;overflow-y:auto}
+.ri{padding:5px 0;border-bottom:1px solid var(--bdr)}.ri:last-child{border:none}
+.ri .rm{font-family:'JetBrains Mono',monospace;color:var(--acc)}.rg{color:var(--grn)}.rb{color:var(--red)}.rn{color:var(--blu)}
+.qopt{display:block;width:100%;text-align:left;background:var(--mbg);border:1px solid var(--bdr);color:var(--txt);padding:9px 12px;margin-bottom:6px;border-radius:4px;cursor:pointer;font-size:.83rem;font-family:'Inter',sans-serif;transition:border-color .15s,color .15s}
+.qopt:hover{border-color:var(--acc);color:var(--acc)}
+.qopt.right{background:rgba(76,175,80,.15);border-color:var(--grn)!important;color:var(--grn)!important}
+.qopt.wrong{background:rgba(229,57,53,.12);border-color:var(--red)!important;color:var(--red)!important}
+.planmeta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:10px 0}.planbox{background:var(--mbg);border:1px solid var(--bdr);border-radius:5px;padding:9px}.planbox b{display:block;color:var(--acc);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}.planbox span{font-size:.8rem;line-height:1.45}.tagrow{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}.tag{border:1px solid var(--bdr);border-radius:999px;padding:3px 7px;font-size:.68rem;color:var(--muted);background:var(--mbg)}.planq{font-size:.9rem;line-height:1.5;margin-bottom:9px}.mastery{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;font-size:.78rem;margin:5px 0}.meter{grid-column:1/3;height:5px;background:var(--bg);border-radius:4px;overflow:hidden}.meter i{display:block;height:100%;background:var(--acc)}
+.hidden{display:none!important}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--bdr);border-radius:3px}
+@media(max-width:800px){header{padding:10px 12px}.logo small{display:block;margin:2px 0 0}.app{grid-template-columns:1fr;padding:10px 8px}.bwrap{width:100%;padding:6px}.bouter{justify-content:center}#board{grid-template-columns:repeat(8,min(11.2vw,45px));grid-template-rows:repeat(8,min(11.2vw,45px))}.sq{width:min(11.2vw,45px);height:min(11.2vw,45px)}.psv{width:min(9.5vw,38px);height:min(9.5vw,38px)}.rcol{height:min(89.6vw,360px)}.frow{width:min(89.6vw,360px)}.planmeta{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">♟ ChessTool <small>English · Caro-Kann · Plans</small></div>
+  <nav>
+    <button class="nb on"  onclick="setMode('drill')">Drill</button>
+    <button class="nb"     onclick="setMode('explorer')">Explorer</button>
+    <button class="nb"     onclick="setMode('quiz')">Quiz</button>
+    <button class="nb"     onclick="setMode('plans')">Plans</button>
+    <button class="nb"     onclick="setMode('bot')">vs Bot</button>
+  </nav>
+</header>
+<div class="app">
+  <div class="bcol">
+    <div class="bwrap">
+      <div class="bouter">
+        <div class="rcol" id="rlabels"></div>
+        <div>
+          <div id="board"></div>
+          <div class="frow" id="flabels"></div>
+        </div>
+      </div>
+    </div>
+    <div class="bctrl">
+      <button class="cb" onclick="goBack()">← Back</button>
+      <button class="cb" onclick="doReset()">↺ Reset</button>
+      <button class="cb" id="hintbtn" onclick="doHint()">💡 Hint</button>
+      <button class="cb" onclick="doFlip()">⇅ Flip</button>
+      <button class="cb p hidden" id="colorbtn" onclick="toggleSide()">White</button>
+      <button class="cb p hidden" id="randbtn"  onclick="startRandom()">▶ Random Line</button>
+      <button class="cb p hidden" id="newgamebtn" onclick="startBotGame()">▶ New Game</button>
+      <button class="cb   hidden" id="revbtn"   onclick="showReview()">🔍 Review</button>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="card">
+      <div class="ch">Opening</div>
+      <div class="cb2">
+        <div id="opname">Starting Position</div>
+        <div id="opeco"></div>
+        <div class="pw"><div class="pb" id="prog" style="width:0%"></div></div>
+        <div id="note">Select a mode above to begin.</div>
+      </div>
+    </div>
+    <div class="card"><div class="ch">Status</div><div class="cb2"><div id="stat" class="info">Welcome!</div></div></div>
+    <div class="card"><div class="ch">Moves</div><div class="cb2"><div id="mvlist"></div></div></div>
+    <!-- drill line picker -->
+    <div class="card" id="linecard">
+      <div class="ch">Lines to Drill</div>
+      <div class="cb2"><div id="linesel"></div></div>
+    </div>
+    <!-- explorer tree -->
+    <div class="card hidden" id="expcard">
+      <div class="ch">Continuations</div>
+      <div class="cb2"><div id="tree"></div></div>
+    </div>
+    <!-- quiz -->
+    <div class="card hidden" id="quizcard">
+      <div class="ch"><span>Quiz</span><span id="qsc" style="color:var(--acc);font-size:.8rem">0 / 0</span></div>
+      <div class="cb2">
+        <div id="qq" style="margin-bottom:10px;font-size:.84rem"></div>
+        <div id="qopts"></div>
+      </div>
+    </div>
+    <!-- bot settings -->
+    <!-- plans -->
+    <div class="card hidden" id="plancard">
+      <div class="ch"><span>Middlegame Plans</span><span id="psc" style="color:var(--acc);font-size:.8rem">0 / 0</span></div>
+      <div class="cb2">
+        <div id="planq" class="planq"></div>
+        <div id="planopts"></div>
+        <button class="cb p" id="nextplan" onclick="startPlanQuiz()" style="width:100%;margin-top:7px">Next Position</button>
+      </div>
+    </div>
+    <div class="card hidden" id="planinfocard">
+      <div class="ch">Position Blueprint</div>
+      <div class="cb2" id="planinfo"></div>
+    </div>
+    <div class="card hidden" id="botcard">
+      <div class="ch">Bot Settings</div>
+      <div class="cb2" style="display:flex;flex-direction:column;gap:9px">
+        <div style="font-size:.77rem;color:var(--muted)">Skill</div>
+        <div class="skrow">
+          <button class="skb on" id="sk0" onclick="setBotSkill(1,'Beginner')">Beginner</button>
+          <button class="skb"    id="sk1" onclick="setBotSkill(8,'Club')">Club</button>
+          <button class="skb"    id="sk2" onclick="setBotSkill(16,'Strong')">Strong</button>
+        </div>
+        <div style="font-size:.77rem;color:var(--muted);margin-top:3px">Play as</div>
+        <div class="skrow">
+          <button class="skb on" id="bc0" onclick="setBotColor('white')">White</button>
+          <button class="skb"    id="bc1" onclick="setBotColor('black')">Black</button>
+        </div>
+      </div>
+    </div>
+    <!-- review -->
+    <div class="card hidden" id="revcard">
+      <div class="ch">Game Review</div>
+      <div class="cb2"><div id="revlist"></div></div>
+    </div>
+  </div>
+</div>
+<script>
+// ─── SVG PIECES ──────────────────────────────────────────────────────────────
+// White pieces = ivory + dark stroke; Black pieces = dark + gold stroke
+const PSV={
+  K:`<svg class="psv" viewBox="0 0 45 45"><g fill="#FFFFF0" stroke="#333" stroke-width="1.5" stroke-linejoin="round"><path d="M22.5 11.63V6M20 8h5"/><path d="M22.5 25s4.5-7.5 3-10.5c0 0-1-2.5-3-2.5s-3 2.5-3 2.5c-1.5 3 3 10.5 3 10.5"/><path d="M11.5 37c5.5 3.5 15.5 3.5 21 0v-7s9-4.5 6-10.5c-4-6.5-13.5-3.5-16 4V17s-5.5-7.5-16-4c-3 6 6 10.5 6 10.5v7"/><path d="M11.5 30c5.5-3 15.5-3 21 0M11.5 33.5c5.5-3 15.5-3 21 0M11.5 37c5.5-3 15.5-3 21 0"/></g></svg>`,
+  Q:`<svg class="psv" viewBox="0 0 45 45"><g fill="#FFFFF0" stroke="#333" stroke-width="1.5" stroke-linejoin="round"><circle cx="6" cy="12" r="2.75"/><circle cx="14" cy="9" r="2.75"/><circle cx="22.5" cy="8" r="2.75"/><circle cx="31" cy="9" r="2.75"/><circle cx="39" cy="12" r="2.75"/><path d="M9 26c8.5-8.5 15.5-8.5 27 0l2.5-12.5L31 25l-.3-14.1-8.2 13.4-8.4-13.1L14 25 6.5 13.5z"/><path d="M9 26c0 2 1.5 2 2.5 4 1 1.5 1 1 .5 3.5-1.5 1-1.5 2.5-1.5 2.5-1.5 1.5.5 2.5.5 2.5 6.5 1 16.5 1 23 0 0 0 1.5-1 0-2.5 0 0 .5-1.5-1-2.5-.5-2.5-.5-2 .5-3.5 1-2 2.5-2 2.5-4"/><path d="M11.5 30c3.5-1 18.5-1 22 0M12 33.5c4-1.5 17-1.5 21 0"/></g></svg>`,
+  R:`<svg class="psv" viewBox="0 0 45 45"><g fill="#FFFFF0" stroke="#333" stroke-width="1.5" stroke-linejoin="round"><path d="M9 39h27v-3H9v3zM12.5 32l1.5-2.5h17l1.5 2.5h-20zM12 36v-4h21v4H12z"/><path d="M14 29.5v-13h17v13H14z"/><path d="M9 12l3.5 3h20l3.5-3V9H9v3zM9 9h27"/><path d="M11 12v2.5M14 12v2.5M31 12v2.5M34 12v2.5"/></g></svg>`,
+  B:`<svg class="psv" viewBox="0 0 45 45"><g fill="#FFFFF0" stroke="#333" stroke-width="1.5" stroke-linejoin="round"><path d="M9 36c3.39-.97 10.11.43 13.5-2 3.39 2.43 10.11 1.03 13.5 2 0 0 1.65.54 3 2-.68.97-1.65.99-3 .5-3.39-.97-10.11.46-13.5-1-3.39 1.46-10.11.03-13.5 1-1.354.49-2.323.47-3-.5 1.354-1.94 3-2 3-2z"/><path d="M15 32c2.5 2.5 12.5 2.5 15 0 .5-1.5 0-2 0-2 0-2.5-2.5-4-2.5-4 5.5-1.5 6-11.5-5-15.5-11 4-10.5 14-5 15.5 0 0-2.5 1.5-2.5 4 0 0-.5.5 0 2z"/><path d="M25 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/><path d="M17.5 26h10M15 30h15"/></g></svg>`,
+  N:`<svg class="psv" viewBox="0 0 45 45"><g fill="#FFFFF0" stroke="#333" stroke-width="1.5" stroke-linejoin="round"><path d="M22 10c10.5 1 16.5 8 16 29H15c0-9 10-6.5 8-21"/><path d="M24 18c.38 5.1-5.45 4.9-5 0"/><path d="M9.5 25.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13z"/><path d="M9 25.5c0 8.5 13.5 16 22 13.5"/><path d="M8 10s1 5.5 1.5 5.5c0 0 2-4 1-5.5"/><path d="M14.5 13.5a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" fill="#333" stroke="none"/></g></svg>`,
+  P:`<svg class="psv" viewBox="0 0 45 45"><g fill="#FFFFF0" stroke="#333" stroke-width="1.5" stroke-linejoin="round"><path d="M22.5 9a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M22.5 9c-4 0-7 3-7 7 0 2.96 1.62 5.5 4 6.88V26h6v-3.12c2.38-1.38 4-3.92 4-6.88 0-4-3-7-7-7z"/><path d="M14 29.5v3.5h17v-3.5l-1.5-2.5h-14z"/><path d="M14.5 37h16v-4h-16v4z"/></g></svg>`,
+  k:`<svg class="psv" viewBox="0 0 45 45"><g fill="#1a1008" stroke="#D4A853" stroke-width="1.5" stroke-linejoin="round"><path d="M22.5 11.63V6M20 8h5"/><path d="M22.5 25s4.5-7.5 3-10.5c0 0-1-2.5-3-2.5s-3 2.5-3 2.5c-1.5 3 3 10.5 3 10.5"/><path d="M11.5 37c5.5 3.5 15.5 3.5 21 0v-7s9-4.5 6-10.5c-4-6.5-13.5-3.5-16 4V17s-5.5-7.5-16-4c-3 6 6 10.5 6 10.5v7"/><path d="M11.5 30c5.5-3 15.5-3 21 0M11.5 33.5c5.5-3 15.5-3 21 0M11.5 37c5.5-3 15.5-3 21 0"/></g></svg>`,
+  q:`<svg class="psv" viewBox="0 0 45 45"><g fill="#1a1008" stroke="#D4A853" stroke-width="1.5" stroke-linejoin="round"><circle cx="6" cy="12" r="2.75"/><circle cx="14" cy="9" r="2.75"/><circle cx="22.5" cy="8" r="2.75"/><circle cx="31" cy="9" r="2.75"/><circle cx="39" cy="12" r="2.75"/><path d="M9 26c8.5-8.5 15.5-8.5 27 0l2.5-12.5L31 25l-.3-14.1-8.2 13.4-8.4-13.1L14 25 6.5 13.5z"/><path d="M9 26c0 2 1.5 2 2.5 4 1 1.5 1 1 .5 3.5-1.5 1-1.5 2.5-1.5 2.5-1.5 1.5.5 2.5.5 2.5 6.5 1 16.5 1 23 0 0 0 1.5-1 0-2.5 0 0 .5-1.5-1-2.5-.5-2.5-.5-2 .5-3.5 1-2 2.5-2 2.5-4"/><path d="M11.5 30c3.5-1 18.5-1 22 0M12 33.5c4-1.5 17-1.5 21 0"/></g></svg>`,
+  r:`<svg class="psv" viewBox="0 0 45 45"><g fill="#1a1008" stroke="#D4A853" stroke-width="1.5" stroke-linejoin="round"><path d="M9 39h27v-3H9v3zM12.5 32l1.5-2.5h17l1.5 2.5h-20zM12 36v-4h21v4H12z"/><path d="M14 29.5v-13h17v13H14z"/><path d="M9 12l3.5 3h20l3.5-3V9H9v3zM9 9h27"/><path d="M11 12v2.5M14 12v2.5M31 12v2.5M34 12v2.5"/></g></svg>`,
+  b:`<svg class="psv" viewBox="0 0 45 45"><g fill="#1a1008" stroke="#D4A853" stroke-width="1.5" stroke-linejoin="round"><path d="M9 36c3.39-.97 10.11.43 13.5-2 3.39 2.43 10.11 1.03 13.5 2 0 0 1.65.54 3 2-.68.97-1.65.99-3 .5-3.39-.97-10.11.46-13.5-1-3.39 1.46-10.11.03-13.5 1-1.354.49-2.323.47-3-.5 1.354-1.94 3-2 3-2z"/><path d="M15 32c2.5 2.5 12.5 2.5 15 0 .5-1.5 0-2 0-2 0-2.5-2.5-4-2.5-4 5.5-1.5 6-11.5-5-15.5-11 4-10.5 14-5 15.5 0 0-2.5 1.5-2.5 4 0 0-.5.5 0 2z"/><path d="M25 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/><path d="M17.5 26h10M15 30h15"/></g></svg>`,
+  n:`<svg class="psv" viewBox="0 0 45 45"><g fill="#1a1008" stroke="#D4A853" stroke-width="1.5" stroke-linejoin="round"><path d="M22 10c10.5 1 16.5 8 16 29H15c0-9 10-6.5 8-21"/><path d="M24 18c.38 5.1-5.45 4.9-5 0"/><path d="M9.5 25.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13z"/><path d="M9 25.5c0 8.5 13.5 16 22 13.5"/><path d="M8 10s1 5.5 1.5 5.5c0 0 2-4 1-5.5"/><path d="M14.5 13.5a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" fill="#D4A853" stroke="none"/></g></svg>`,
+  p:`<svg class="psv" viewBox="0 0 45 45"><g fill="#1a1008" stroke="#D4A853" stroke-width="1.5" stroke-linejoin="round"><path d="M22.5 9a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M22.5 9c-4 0-7 3-7 7 0 2.96 1.62 5.5 4 6.88V26h6v-3.12c2.38-1.38 4-3.92 4-6.88 0-4-3-7-7-7z"/><path d="M14 29.5v3.5h17v-3.5l-1.5-2.5h-14z"/><path d="M14.5 37h16v-4h-16v4z"/></g></svg>`,
+};
+
+// ─── FEN ENGINE ──────────────────────────────────────────────────────────────
+function parseFen(fen){
+  const p=fen.split(' ');
+  const rows=p[0].split('/');
+  const bd=[];
+  for(let r=0;r<8;r++){const row=[];for(const c of rows[r]){if(isNaN(c))row.push(c);else for(let i=0;i<+c;i++)row.push(null);}bd.push(row);}
+  return{bd,turn:p[1],cas:p[2],ep:p[3]||'-',hm:+p[4]||0,fm:+p[5]||1};
+}
+// bd[7-rank][file] = piece
+function GP(bd,r,f){return(r>=0&&r<8&&f>=0&&f<8)?bd[7-r][f]:null;}
+function S2A(r,f){return String.fromCharCode(97+f)+(r+1);}
+function isW(p){return p&&p===p.toUpperCase();}
+function isB(p){return p&&p!==p.toUpperCase();}
+function friendly(p,t){return t==='w'?isW(p):isB(p);}
+function hostile(p,t){return t==='w'?isB(p):isW(p);}
+
+function applyUci(fen,uci){
+  const{bd:b0,turn,cas,ep,hm,fm}=parseFen(fen);
+  const b=b0.map(r=>[...r]);
+  const ff=uci.charCodeAt(0)-97,fr=+uci[1]-1;
+  const tf=uci.charCodeAt(2)-97,tr=+uci[3]-1;
+  const promo=uci[4]?(turn==='w'?uci[4].toUpperCase():uci[4].toLowerCase()):null;
+  const pc=b[7-fr][ff];
+  const cap=b[7-tr][tf];
+  b[7-fr][ff]=null;
+  b[7-tr][tf]=promo||pc;
+  // castling rook
+  if(pc==='K'){if(tf===6&&ff===4){b[7][5]=b[7][7];b[7][7]=null;}if(tf===2&&ff===4){b[7][3]=b[7][0];b[7][0]=null;}}
+  if(pc==='k'){if(tf===6&&ff===4){b[0][5]=b[0][7];b[0][7]=null;}if(tf===2&&ff===4){b[0][3]=b[0][0];b[0][0]=null;}}
+  // en passant
+  if(pc&&pc.toUpperCase()==='P'&&ep!=='-'){
+    const ef=ep.charCodeAt(0)-97,er=+ep[1]-1;
+    if(tf===ef&&tr===er)b[7-(turn==='w'?er-1:er+1)][ef]=null;
+  }
+  let nc=cas;
+  if(pc==='K')nc=nc.replace(/[KQ]/g,'');if(pc==='k')nc=nc.replace(/[kq]/g,'');
+  if(fr===0&&ff===0)nc=nc.replace('Q','');if(fr===0&&ff===7)nc=nc.replace('K','');
+  if(fr===7&&ff===0)nc=nc.replace('q','');if(fr===7&&ff===7)nc=nc.replace('k','');
+  if(!nc)nc='-';
+  let nep='-';
+  if(pc&&pc.toUpperCase()==='P'&&Math.abs(tr-fr)===2)nep=S2A(Math.floor((fr+tr)/2),ff);
+  const nt=turn==='w'?'b':'w';
+  const nh=(pc&&pc.toUpperCase()==='P')||cap?0:hm+1;
+  const nf=fm+(turn==='b'?1:0);
+  let fs='';
+  for(let r=7;r>=0;r--){let e=0;for(let f=0;f<8;f++){if(b[r][f]){if(e){fs+=e;e=0;}fs+=b[r][f];}else e++;}if(e)fs+=e;if(r>0)fs+='/';}
+  return`${fs} ${nt} ${nc} ${nep} ${nh} ${nf}`;
+}
+
+function attacked(bd,r,f,by){
+  const foe=by==='w'?isW:isB;
+  for(const[dr,df]of[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]){const p=GP(bd,r+dr,f+df);if(p&&foe(p)&&p.toUpperCase()==='N')return true;}
+  for(const[dr,df]of[[-1,0],[1,0],[0,-1],[0,1]]){let nr=r+dr,nf=f+df;while(nr>=0&&nr<8&&nf>=0&&nf<8){const p=GP(bd,nr,nf);if(p){if(foe(p)&&(p.toUpperCase()==='R'||p.toUpperCase()==='Q'))return true;break;}nr+=dr;nf+=df;}}
+  for(const[dr,df]of[[-1,-1],[-1,1],[1,-1],[1,1]]){let nr=r+dr,nf=f+df;while(nr>=0&&nr<8&&nf>=0&&nf<8){const p=GP(bd,nr,nf);if(p){if(foe(p)&&(p.toUpperCase()==='B'||p.toUpperCase()==='Q'))return true;break;}nr+=dr;nf+=df;}}
+  for(const[dr,df]of[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]){const p=GP(bd,r+dr,f+df);if(p&&foe(p)&&p.toUpperCase()==='K')return true;}
+  const pd=by==='w'?-1:1;
+  for(const df of[-1,1]){const p=GP(bd,r+pd,f+df);if(p&&foe(p)&&p.toUpperCase()==='P')return true;}
+  return false;
+}
+
+function inCheck(fen,side){
+  const{bd}=parseFen(fen);const kp=side==='w'?'K':'k';
+  for(let r=0;r<8;r++)for(let f=0;f<8;f++)if(GP(bd,r,f)===kp)return attacked(bd,r,f,side==='w'?'b':'w');
+  return false;
+}
+
+function legalMoves(fen){
+  const{bd,turn,cas,ep}=parseFen(fen);
+  const moves=[];
+  function tryM(uci){const nf=applyUci(fen,uci);if(!inCheck(nf,turn))moves.push(uci);}
+  for(let r=0;r<8;r++)for(let f=0;f<8;f++){
+    const p=GP(bd,r,f);if(!p||!friendly(p,turn))continue;
+    const pt=p.toUpperCase();
+    if(pt==='P'){
+      const d=turn==='w'?1:-1,pr=(turn==='w'&&r+d===7)||(turn==='b'&&r+d===0);
+      if(!GP(bd,r+d,f)){if(pr)for(const q of['q','r','b','n'])tryM(S2A(r,f)+S2A(r+d,f)+q);else tryM(S2A(r,f)+S2A(r+d,f));
+        if(((turn==='w'&&r===1)||(turn==='b'&&r===6))&&!GP(bd,r+d,f)&&!GP(bd,r+2*d,f))tryM(S2A(r,f)+S2A(r+2*d,f));}
+      for(const df of[-1,1]){if(f+df<0||f+df>7)continue;const ie=ep!=='-'&&f+df===ep.charCodeAt(0)-97&&r+d===+ep[1]-1;
+        if(hostile(GP(bd,r+d,f+df),turn)||ie){if(pr)for(const q of['q','r','b','n'])tryM(S2A(r,f)+S2A(r+d,f+df)+q);else tryM(S2A(r,f)+S2A(r+d,f+df));}}}
+    if(pt==='N'){for(const[dr,df]of[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]){const nr=r+dr,nf2=f+df;if(nr>=0&&nr<8&&nf2>=0&&nf2<8&&!friendly(GP(bd,nr,nf2),turn))tryM(S2A(r,f)+S2A(nr,nf2));}}
+    const slid={B:[[-1,-1],[-1,1],[1,-1],[1,1]],R:[[-1,0],[1,0],[0,-1],[0,1]],Q:[[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]]};
+    if(slid[pt]){for(const[dr,df]of slid[pt]){let nr=r+dr,nf2=f+df;while(nr>=0&&nr<8&&nf2>=0&&nf2<8){if(friendly(GP(bd,nr,nf2),turn))break;tryM(S2A(r,f)+S2A(nr,nf2));if(hostile(GP(bd,nr,nf2),turn))break;nr+=dr;nf2+=df;}}}
+    if(pt==='K'){
+      for(const[dr,df]of[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]){const nr=r+dr,nf2=f+df;if(nr>=0&&nr<8&&nf2>=0&&nf2<8&&!friendly(GP(bd,nr,nf2),turn))tryM(S2A(r,f)+S2A(nr,nf2));}
+      if(turn==='w'&&r===0&&f===4){if(cas.includes('K')&&!GP(bd,0,5)&&!GP(bd,0,6)&&!attacked(bd,0,4,'b')&&!attacked(bd,0,5,'b')&&!attacked(bd,0,6,'b'))tryM('e1g1');if(cas.includes('Q')&&!GP(bd,0,3)&&!GP(bd,0,2)&&!GP(bd,0,1)&&!attacked(bd,0,4,'b')&&!attacked(bd,0,3,'b')&&!attacked(bd,0,2,'b'))tryM('e1c1');}
+      if(turn==='b'&&r===7&&f===4){if(cas.includes('k')&&!GP(bd,7,5)&&!GP(bd,7,6)&&!attacked(bd,7,4,'w')&&!attacked(bd,7,5,'w')&&!attacked(bd,7,6,'w'))tryM('e8g8');if(cas.includes('q')&&!GP(bd,7,3)&&!GP(bd,7,2)&&!GP(bd,7,1)&&!attacked(bd,7,4,'w')&&!attacked(bd,7,3,'w')&&!attacked(bd,7,2,'w'))tryM('e8c8');}
+    }
+  }
+  return moves;
+}
+
+function uci2san(fen,uci){
+  const{bd,turn}=parseFen(fen);
+  const ff=uci.charCodeAt(0)-97,fr=+uci[1]-1,tf=uci.charCodeAt(2)-97,tr=+uci[3]-1;
+  const p=GP(bd,fr,ff);if(!p)return uci;
+  if(uci==='e1g1'||uci==='e8g8')return'O-O';
+  if(uci==='e1c1'||uci==='e8c8')return'O-O-O';
+  const pt=p.toUpperCase(),cap=GP(bd,tr,tf)?'x':'';
+  const dst=S2A(tr,tf),prom=uci[4]?'='+uci[4].toUpperCase():'';
+  if(pt==='P')return cap?String.fromCharCode(97+ff)+'x'+dst+prom:dst+prom;
+  return pt+cap+dst;
+}
+
+// Find the UCI for a given SAN in a position using actual legal moves
+function san2uci(fen,san){
+  const moves=legalMoves(fen);
+  for(const uci of moves){
+    const s=uci2san(fen,uci);
+    if(s===san||s===san.replace(/[+#]/g,''))return uci;
+  }
+  return null;
+}
+
+// ─── OPENING DATABASE ─────────────────────────────────────────────────────────
+// Build the DB by resolving SANs to actual FENs using the chess engine
+// This way Bg2, Nf3, etc. ALL work correctly because we verify via legal moves
+const INIT='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+const DB={};  // FEN -> {name, eco, note, moves:{SAN->nextFEN}}
+
+function addPos(fen,name,eco,note){DB[fen]={name,eco,note,moves:{}};}
+function addLine(moves,anns){
+  // moves: [{fen,san}] pairs OR just build from start
+  // actually takes array of SANs and walks from INIT
+  // But some lines need to start mid-position, so we accept {start,sans,anns}
+}
+
+// The cleanest approach: define each line as an array of SANs,
+// walk from INIT resolving each SAN via the engine, register every position
+function registerLine(sanArr, annArr){
+  let fen=INIT;
+  for(let i=0;i<sanArr.length;i++){
+    const san=sanArr[i];
+    const uci=san2uci(fen,san);
+    if(!uci){console.warn('Cannot resolve',san,'at',fen);break;}
+    const nextFen=applyUci(fen,uci);
+    if(!DB[fen])DB[fen]={name:'',eco:'',note:'',moves:{}};
+    DB[fen].moves[san]=nextFen;
+    if(annArr&&annArr[i]){
+      const a=annArr[i];
+      if(a.name&&!DB[fen].name)DB[fen].name=a.name;
+      if(a.eco&&!DB[fen].eco)DB[fen].eco=a.eco;
+      if(a.note&&!DB[fen].note)DB[fen].note=a.note;
+    }
+    fen=nextFen;
+  }
+}
+
+// Helper: annotation shorthand
+const A=(name,eco,note)=>({name,eco,note});
+const N=null; // no annotation
+
+// ════ ENGLISH OPENING LINES ══════════════════════════════════════════════════
+
+// Line 1: Botvinnik vs 1...e5, Two Knights
+registerLine(
+  ['c4','e5','Nc3','Nf6','g3','d5','cxd5','Nxd5','Bg2','Nb6','Nf3','Nc6','O-O','Be7','d3','O-O','Nd5','Nxd5','exd5','Nb4','Re1','d6','a3','Na6','Nc3','Nc5','Rb1'],
+  [A('English Opening','A10','<strong>1.c4</strong> — The English. Control d5 without occupying it. A hypermodern system that leads to rich strategic play.'),
+   A('English: King\'s English','A20','<strong>1…e5</strong> — The reversed Sicilian. White has an extra tempo compared to Black in a normal Sicilian.'),
+   A('English: King\'s English','A25','<strong>2.Nc3</strong> — Developing toward d5. White plans g3-Bg2 and long-term pressure.'),
+   A('English: Two Knights','A22','<strong>2…Nf6</strong> — Symmetrical development. White starts the Botvinnik fianchetto plan.'),
+   A('English: Botvinnik','A22','<strong>3.g3</strong> — Beginning the fianchetto. The Bg2 will dominate the long diagonal for the whole game.'),
+   A('English: Classical','A22','<strong>3…d5</strong> — Black strikes the center. White trades to create an imbalance.'),
+   A('English: Classical Exchange','A22','<strong>4.cxd5</strong> — Opening the c-file and reducing central tension.'),
+   A('English: Botvinnik','A22','<strong>4…Nxd5</strong> — Black recaptures. Now <strong>5.Bg2</strong> — the cornerstone move, activating the long diagonal.'),
+   A('English: Botvinnik — Bg2','A22','<strong>5.Bg2</strong> — The fianchetto is complete! This bishop eyes d5 and will dominate the game. Black must find active counterplay.'),
+   A('English: Botvinnik','A22','<strong>5…Nb6</strong> — The knight retreats safely. White develops with Nf3 and plans O-O, d3, Nd5.'),
+   A('English: Botvinnik','A22','<strong>6.Nf3</strong> — Development. White will castle and then manoeuvre Nd5.'),
+   N,
+   A('English: Botvinnik','A22','<strong>7.O-O</strong> — King to safety. Plan: d3, Nd5 — the dream outpost.'),
+   N,
+   A('English: Botvinnik','A22','<strong>8.d3</strong> — Solid centre. White prepares Nd5.'),
+   N,
+   A('English: Botvinnik — Nd5!','A22','<strong>9.Nd5!</strong> — The ideal outpost. Black must exchange, but White recaptures with the e-pawn, creating a strong passed pawn.'),
+  ]
+);
+
+// Line 2: Botvinnik vs 1...Nc6 (Closed)
+registerLine(
+  ['c4','e5','Nc3','Nc6','g3','g6','Bg2','Bg7','d3','d6','e4','Nge7','Nge2','O-O','O-O','Be6','Nd5','f5'],
+  [N,N,N,
+   A('English: Closed','A26','<strong>2…Nc6</strong> — Black heads for a King\'s Indian structure. White mirrors with the Botvinnik setup.'),
+   N,
+   A('English: Closed','A26','<strong>3…g6</strong> — Double fianchetto battle. Both Bg2 and Bg7 fight for the long diagonal.'),
+   N,
+   A('English: Closed','A26','<strong>4…Bg7</strong> — Mirror position. White plays d3 for flexibility, then e4 for space.'),
+   N,N,
+   A('English: Closed — e4','A26','<strong>6.e4!</strong> — Space! White has a strong pawn centre. Plan: Nge2, O-O, Nd5.'),
+  ]
+);
+
+// Line 3: Symmetrical — Four Knights d4 into Maroczy
+registerLine(
+  ['c4','c5','Nf3','Nf6','Nc3','Nc6','d4','cxd4','Nxd4','g6','e4','Bg7','Be2','O-O','O-O','d6','Be3','Bd7','Qd2','Nxd4','Bxd4','Bc6','f3','a5','b3'],
+  [N,
+   A('English: Symmetrical','A30','<strong>1…c5</strong> — Symmetrical. Black mirrors White. The key: White breaks symmetry with d4 at the right moment.'),
+   A('English: Symmetrical','A30','<strong>2.Nf3</strong> — Flexible. White prepares d4.'),
+   N,
+   A('English: Four Knights','A33','<strong>3.Nc3</strong> — Four knights. Now <strong>4.d4!</strong> breaks the symmetry.'),
+   N,
+   A('English: Four Knights — d4','A33','<strong>4.d4!</strong> — The critical central break! White seizes the initiative.'),
+   A('English: Symmetrical Exchange','A33','<strong>4…cxd4 5.Nxd4</strong> — Black trades. White recaptures and plays e4 for the Maroczy Bind.'),
+   N,
+   A('English: Maroczy Bind','A36','<strong>5…g6</strong> — Black fianchettoes. White plays <strong>6.e4!</strong> to establish the Maroczy Bind.'),
+   A('English: Maroczy Bind','A36','<strong>6.e4!</strong> — Pawns on c4 and e4 clamp down on d5. Black has no space. Plan: Be2, O-O, Be3.'),
+  ]
+);
+
+// Line 4: Symmetrical — Hedgehog
+registerLine(
+  ['c4','c5','Nf3','e6','Nc3','a6','g3','b5','cxb5','axb5','Bg2','Bb7','O-O','Nf6','b3','d6','Bb2','Nbd7','d4','cxd4','Nxd4','Qb6'],
+  [N,N,N,
+   A('English: Hedgehog','A30','<strong>2…e6</strong> — Black prepares the Hedgehog: a6, b5, d6, Bb7. A coiled spring waiting to strike.'),
+   N,
+   A('English: Hedgehog','A30','<strong>3…a6</strong> — Preparing b5 to break the c4 grip. The Hedgehog is resilient and explosive.'),
+  ]
+);
+
+// Line 5: Anglo-Grünfeld
+registerLine(
+  ['c4','Nf6','Nc3','d5','cxd5','Nxd5','g3','g6','Bg2','Bg7','Nf3','O-O','O-O','Nc6','Nxd5','Qxd5','d3','Qd6','Be3','Rd8','Qa4','a6','Rfd1'],
+  [N,
+   A('English vs 1…Nf6','A15','<strong>1…Nf6</strong> — Flexible. White heads for the Anglo-Grünfeld with cxd5 Nxd5 g3.'),
+   A('English: Anglo-Indian','A16','<strong>2.Nc3</strong> — Developing toward d5. After d5 cxd5 Nxd5 g3 we reach the Anglo-Grünfeld.'),
+   A('English: Anglo-Grünfeld','A16','<strong>2…d5</strong> — Central challenge. White trades and builds the fianchetto with an extra tempo.'),
+   A('English: Anglo-Grünfeld','A16','<strong>3.cxd5 Nxd5</strong> — White trades, then g3 begins the fianchetto.'),
+   N,
+   A('English: Anglo-Grünfeld','A16','<strong>4.g3</strong> — Fianchetto. White will castle and then challenge with e4.'),
+   N,
+   A('English: Anglo-Grünfeld','A16','<strong>5.Bg2</strong> — The bishop eyes the long diagonal. Both sides castle and a balanced fight begins.'),
+  ]
+);
+
+// Line 6: Anglo-Indian / King's Indian English
+registerLine(
+  ['c4','Nf6','Nc3','g6','g3','Bg7','Bg2','O-O','Nf3','d6','O-O','Nc6','d4','Nxd4','Nxd4','Nxd4','Qxd4','c6','Bf4','d5','cxd5','cxd5'],
+  [N,N,N,
+   A('English: King\'s Indian setup','A15','<strong>2…g6</strong> — Black heads for a King\'s Indian structure. White uses d4 to get an IQP position.'),
+  ]
+);
+
+// ════ CARO-KANN LINES ════════════════════════════════════════════════════════
+
+// Line 7: Classical — Karpov Variation (B19) full line
+registerLine(
+  ['e4','c6','d4','d5','Nc3','dxe4','Nxe4','Bf5','Ng3','Bg6','h4','h6','Nf3','Nd7','h5','Bh7','Bd3','Bxd3','Qxd3','e6','Bd2','Ngf6','O-O-O','Be7','Ne4','Nxe4','Qxe4','Nf6','Qh4','O-O','Ne5','Nd7','Nxd7','Qxd7','Qe4','Nf6'],
+  [N,
+   A('Caro-Kann Defence','B10','<strong>1…c6</strong> — The Caro-Kann! Prepares d5 with pawn support. The c8 bishop stays free — unlike the French.'),
+   A('Caro-Kann: Main Line','B12','<strong>2.d4</strong> — White builds the centre. We challenge immediately with 2…d5.'),
+   N,
+   A('Caro-Kann: Classical','B18','<strong>3.Nc3</strong> — Classical Variation. We trade with 3…dxe4 to free the position.'),
+   N,
+   A('Caro-Kann: Classical Bf5!','B18','<strong>4…Bf5!</strong> — The key move! Bishop escapes BEFORE e6. This is the whole point of the Caro-Kann.'),
+   N,
+   A('Caro-Kann: Classical','B18','<strong>5.Ng3 Bg6</strong> — White chases the bishop; we retreat to g6, still active.'),
+   N,
+   A('Caro-Kann: Spassky Var','B18','<strong>6.h4</strong> — Threatening h5. We play <strong>6…h6</strong> to stop it.'),
+   A('Caro-Kann: Classical','B18','<strong>6…h6</strong> — Stopping h5. Our bishop on g6 is safe. Continue with Nd7, Ngf6.'),
+   A('Caro-Kann: Classical','B19','<strong>7.Nf3 Nd7</strong> — Karpov Variation! Preparing Ngf6 without allowing Nxf6+.'),
+   A('Caro-Kann: Karpov','B19','<strong>7…Nd7</strong> — Rock solid. Plan: Ngf6, e6, Be7, castle kingside.'),
+   A('Caro-Kann: Karpov','B19','<strong>8.h5 Bh7</strong> — White pushes; we retreat the bishop safely.'),
+   A('Caro-Kann: Karpov','B19','<strong>8…Bh7</strong> — Bishop retreats. White plays Bd3 to exchange it.'),
+   A('Caro-Kann: Karpov','B19','<strong>9.Bd3 Bxd3</strong> — We exchange, removing White\'s good bishop.'),
+   N,
+   A('Caro-Kann: Karpov','B19','<strong>10.e6</strong> — Solid. The d5-e6-c6 pawn chain is extremely sturdy. White castles queenside.'),
+  ]
+);
+
+// Line 8: Classical — early Nf3 by White
+registerLine(
+  ['e4','c6','d4','d5','Nc3','dxe4','Nxe4','Bf5','Nf3','Nd7','Ng3','Bg6','h4','h6','Bd3','Bxd3','Qxd3','e6','Bd2','Ngf6','O-O-O','Be7','Kb1'],
+  [N,N,N,N,N,N,
+   A('Caro-Kann: Classical alt','B18','<strong>5.Nf3</strong> — White develops differently. We continue with Nd7, Ng3, and reach a similar structure to B19.'),
+  ]
+);
+
+// Line 9: Advance — Short system
+registerLine(
+  ['e4','c6','d4','d5','e5','Bf5','Nf3','e6','Be2','Nd7','O-O','Ne7','Nbd2','h6','Nb3','g5','Nfd2','Bg6','c3','c5','dxc5','Bxc5','Nxc5','Nxc5','Nb3','Ncd7','Be3','Ng6','Nd4','Nxd4','Bxd4'],
+  [N,N,N,N,
+   A('Caro-Kann: Advance','B12','<strong>3.e5</strong> — Advance Variation. White grabs space. Our plan: <strong>3…Bf5!</strong> then e6 and c5.'),
+   A('Caro-Kann: Advance Bf5','B12','<strong>3…Bf5!</strong> — Critical! The bishop escapes before e6. This is the whole point — we avoid the bad bishop problem.'),
+   A('Caro-Kann: Advance Short','B12','<strong>4.Nf3</strong> — Short System. We play 4…e6 to support d5 and prepare c5.'),
+   A('Caro-Kann: Advance','B12','<strong>4…e6</strong> — Solid pawn chain c6-d5-e6. We attack with c5 soon.'),
+   N,
+   A('Caro-Kann: Advance','B12','<strong>5…Nd7</strong> — The knight heads for e7-f5 to attack the e5 pawn.'),
+   N,
+   A('Caro-Kann: Advance','B12','<strong>6…Ne7!</strong> — From e7, the knight goes to f5 attacking e5, or to g6. Very flexible.'),
+  ]
+);
+
+// Line 10: Advance — Tal variation (h4 system)
+registerLine(
+  ['e4','c6','d4','d5','e5','Bf5','h4','h5','Bd3','Bxd3','Qxd3','e6','Bg5','Qb6','Nd2','Qa6','Qf3','c5','Ne2','Nc6','c3'],
+  [N,N,N,N,N,N,
+   A('Caro-Kann: Advance Tal','B12','<strong>4.h4!</strong> — Tal\'s aggressive approach. We play 4…h5 to stabilise.'),
+   A('Caro-Kann: Advance Tal','B12','<strong>4…h5!</strong> — Stopping h5. If White plays Bd3 we exchange favourably.'),
+  ]
+);
+
+// Line 11: Panov-Botvinnik Attack
+registerLine(
+  ['e4','c6','d4','d5','exd5','cxd5','c4','Nf6','Nc3','e6','Nf3','Bb4','Bd3','dxc4','Bxc4','O-O','O-O','Nc6','a3','Ba5','Bg5','Be7','Bxe7','Qxe7','Ne4','Nxe4','Bxe4','Rd8'],
+  [N,N,N,N,
+   A('Caro-Kann: Exchange','B13','<strong>3.exd5 cxd5</strong> — Exchange. We recapture with the c-pawn, then White plays c4 for the Panov.'),
+   N,
+   A('Caro-Kann: Panov Attack','B13','<strong>4.c4!</strong> — Panov-Botvinnik! IQP positions. We play Nf6 and aim for active piece play.'),
+   A('Caro-Kann: Panov','B14','<strong>4…Nf6</strong> — Developing and pressuring c4.'),
+   N,
+   A('Caro-Kann: Panov','B14','<strong>5…e6</strong> — Solid. We prepare Be7 and castle. The IQP gives White activity; we have structure.'),
+   A('Caro-Kann: Panov Nimzo','B14','<strong>6…Bb4!</strong> — Nimzo-style! Pinning c3, getting active piece play.'),
+  ]
+);
+
+// Line 12: Exchange — no Panov
+registerLine(
+  ['e4','c6','d4','d5','exd5','cxd5','Bd3','Nc6','c3','Qc7','Ne2','Bg4','f3','Bd7','O-O','e6','Nd2','Nf6','Nf3','Bd6','Bg5','O-O'],
+  [N,N,N,N,
+   A('Caro-Kann: Exchange','B13','<strong>3.exd5 cxd5</strong> — Exchange Variation. White plays Bd3 instead of c4, heading for a symmetrical position.'),
+  ]
+);
+
+// Line 13: Two Knights Bg4
+registerLine(
+  ['e4','c6','Nc3','d5','Nf3','Bg4','h3','Bxf3','Qxf3','e6','d4','Nf6','Bd3','Bb4','O-O','O-O','a3','Bxc3','bxc3','Nbd7','Re1','c5'],
+  [N,N,
+   A('Caro-Kann: Two Knights','B10','<strong>2.Nc3</strong> — Two Knights. We play d5 then Bg4, pinning the f3 knight.'),
+   A('Caro-Kann: Two Knights','B11','<strong>2…d5</strong> — Central challenge. Then 3…Bg4 — active piece play.'),
+   N,
+   A('Caro-Kann: Two Knights Bg4','B11','<strong>3…Bg4!</strong> — The pin! White must deal with this. If h3 we exchange and damage White\'s structure.'),
+  ]
+);
+
+// ─── DRILL LINE DEFINITIONS ──────────────────────────────────────────────────
+const DLINES=[
+  {id:'e-bot',  label:'English: Botvinnik vs 1…e5',     group:'English (White)', color:'white', sans:['c4','e5','Nc3','Nf6','g3','d5','cxd5','Nxd5','Bg2','Nb6','Nf3']},
+  {id:'e-cls2', label:'English: Botvinnik vs 1…Nc6',    group:'English (White)', color:'white', sans:['c4','e5','Nc3','Nc6','g3','g6','Bg2','Bg7','d3','d6','e4']},
+  {id:'e-sym',  label:'English: Symmetrical / Maroczy', group:'English (White)', color:'white', sans:['c4','c5','Nf3','Nf6','Nc3','Nc6','d4','cxd4','Nxd4','g6','e4']},
+  {id:'e-hedge',label:'English: Hedgehog',               group:'English (White)', color:'white', sans:['c4','c5','Nf3','e6','Nc3','a6','g3','b5','cxb5','axb5','Bg2']},
+  {id:'e-grun', label:'English: Anglo-Grünfeld',         group:'English (White)', color:'white', sans:['c4','Nf6','Nc3','d5','cxd5','Nxd5','g3','g6','Bg2','Bg7','Nf3']},
+  {id:'ck-cls', label:'Caro-Kann: Classical Karpov',     group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','Nc3','dxe4','Nxe4','Bf5','Ng3','Bg6','h4','h6','Nf3','Nd7']},
+  {id:'ck-adv', label:'Caro-Kann: Advance (Short)',      group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','e5','Bf5','Nf3','e6','Be2','Nd7','O-O','Ne7']},
+  {id:'ck-tal', label:'Caro-Kann: Advance (Tal h4)',     group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','e5','Bf5','h4','h5','Bd3','Bxd3','Qxd3']},
+  {id:'ck-panov',label:'Caro-Kann: Panov Attack',        group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','exd5','cxd5','c4','Nf6','Nc3','e6','Nf3','Bb4']},
+  {id:'ck-2k',  label:'Caro-Kann: Two Knights Bg4',      group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','Nc3','d5','Nf3','Bg4','h3','Bxf3','Qxf3']},
+];
+
+
+// ─── MIDDLEGAME PLAN DATABASE ────────────────────────────────────────────────
+// Each entry is tied to an opening family rather than a single memorized move.
+// This is intentionally plan-first: goal, pawn break, piece map, opponent idea,
+// trigger and common mistake are all trained separately.
+const PLAN_DB=[
+ {id:'eng-bot',title:'English — Botvinnik / Closed Center',side:'White',eco:'A22–A29',
+  sans:['c4','e5','Nc3','Nc6','g3','g6','Bg2','Bg7','d3','d6','e4'],
+  goal:'Build a kingside initiative while controlling d5.',breaks:'f4–f5 is the thematic break; b4 can gain queenside space.',pieces:'Nge2, O-O, Be3, Qd2; one knight often heads for d5.',opp:'Black wants ...f5, ...Be6, ...Qd7 and sometimes ...Nd4.',trigger:'If Black cannot challenge d5 effectively, occupy it with a knight before launching f4.',mistake:'Playing f4 too early while undeveloped, or trading the g2 bishop without a concrete reason.',
+  q:'What is White usually trying to achieve in this Botvinnik structure?',opts:['Prepare f4–f5 while using d5 as an outpost','Trade queens immediately and play for a rook ending','Force c5 at all costs','Push h4-h5 before completing development'],a:0},
+ {id:'eng-rev-sic',title:'English — Reversed Sicilian / Four Knights',side:'White',eco:'A28',
+  sans:['c4','e5','Nc3','Nf6','Nf3','Nc6','g3','Bb4','Bg2','O-O','O-O'],
+  goal:'Use the extra tempo to create pressure on the center and queenside.',breaks:'d4 is the main central break; b4 is a common space-gaining idea.',pieces:'Bg2, O-O, d3 or d4, Rb1; Nd5 becomes strong when Black cannot chase it.',opp:'Black often seeks ...Bxc3, ...d6, ...Be6 and ...Qd7, or a timely ...d5.',trigger:'When your pieces are developed and Black cannot punish the center, d4 often converts the extra tempo into space.',mistake:'Drifting with slow moves and allowing Black to equalize with ...d5 for free.',
+  q:'Which pawn break most often turns White\'s extra tempo into central play?',opts:['d4','h4','f3','a3'],a:0},
+ {id:'eng-sym',title:'English — Symmetrical / Maroczy',side:'White',eco:'A33–A36',
+  sans:['c4','c5','Nf3','Nf6','Nc3','Nc6','d4','cxd4','Nxd4','g6','e4'],
+  goal:'Clamp down on d5 and squeeze Black with a Maroczy Bind.',breaks:'b4 can gain queenside space; f4 can support kingside play; d5 is usually a square, not a pawn break.',pieces:'Be2, Be3, O-O, Qd2, Rac1/Rfd1; knights pressure d5.',opp:'Black seeks ...d5 or ...b5 to break the bind and activate the bishops.',trigger:'If Black cannot achieve ...d5, improve pieces patiently and prevent ...b5 before expanding.',mistake:'Forcing an attack before finishing development and allowing the freeing ...d5 break.',
+  q:'What is Black\'s most important freeing idea against a Maroczy Bind?',opts:['...d5','...h5','...f6 immediately','...Qa5 followed by queen trade'],a:0},
+ {id:'eng-hedge',title:'English — Hedgehog',side:'White',eco:'A30',
+  sans:['c4','c5','Nf3','e6','Nc3','a6','g3','b5','cxb5','axb5','Bg2','Bb7','O-O','Nf6','b3','d6','Bb2','Nbd7'],
+  goal:'Restrict Black without overextending, then break when Black is tied down.',breaks:'d4/e4 can seize the center; a4 can restrain ...b5 ideas.',pieces:'Bb2, O-O, Qc2, Rad1/Rfd1; centralize rooks before opening the position.',opp:'The Hedgehog lives for ...b5 and ...d5 tactical breaks.',trigger:'Before expanding, check whether ...b5 or ...d5 works tactically for Black; prevention is often worth more than a flashy move.',mistake:'Assuming the space advantage means you should attack immediately.',
+  q:'Against a Hedgehog, what should White monitor on almost every move?',opts:['Black\'s ...b5 and ...d5 breaks','Only kingside mating threats','A forced queen trade','An immediate e5 sacrifice'],a:0},
+ {id:'eng-grun',title:'English — Anglo-Grünfeld',side:'White',eco:'A16',
+  sans:['c4','Nf6','Nc3','d5','cxd5','Nxd5','g3','g6','Bg2','Bg7','Nf3','O-O','O-O','Nc6'],
+  goal:'Exploit pressure on the long diagonal and build a stable center.',breaks:'d4 is thematic when it can be supported; e4 may build a broad center in some structures.',pieces:'Bg2, O-O, d3/d4, Be3, Qd2; rooks often come to c1 and d1.',opp:'Black wants active piece play, ...e5 or ...c5, and pressure on the center.',trigger:'If Black\'s knight on d5 becomes loose or overloaded, use the g2 bishop and central breaks tactically.',mistake:'Treating the position like a quiet fianchetto and ignoring Black\'s dynamic center.',
+  q:'What makes the g2 bishop especially important in Anglo-Grünfeld structures?',opts:['It pressures the central dark squares and the long diagonal','It should always be traded for a knight on c6','It only defends the king','It prepares queenside castling'],a:0},
+ {id:'ck-adv',title:'Caro-Kann — Advance',side:'Black',eco:'B12',
+  sans:['e4','c6','d4','d5','e5','Bf5','Nf3','e6','Be2','Nd7','O-O','Ne7'],
+  goal:'Attack White\'s center and prove the e5 space is a target, not a permanent advantage.',breaks:'...c5 is the primary break; ...f6 is the second lever when development permits.',pieces:'...Bf5, ...e6, ...Nd7, ...Ne7, ...c5; queen often to b6, rooks to c8/f8.',opp:'White wants kingside space, h4-h5, and a stable e5 pawn supporting an attack.',trigger:'If White overprotects e5 but neglects d4, hit d4 with ...c5 and pile up with ...Nc6/Qb6.',mistake:'Playing passively and never challenging the pawn chain.',
+  q:'What is Black\'s main strategic task in the Advance Caro-Kann?',opts:['Challenge White\'s center with ...c5 and often ...f6','Preserve every piece and avoid pawn breaks','Castle queenside as fast as possible','Trade the c8 bishop for any knight'],a:0},
+ {id:'ck-class',title:'Caro-Kann — Classical / Karpov',side:'Black',eco:'B18–B19',
+  sans:['e4','c6','d4','d5','Nc3','dxe4','Nxe4','Bf5','Ng3','Bg6','h4','h6','Nf3','Nd7'],
+  goal:'Complete development without creating weaknesses, then challenge White\'s center.',breaks:'...e6 stabilizes; ...c5 is the key active break once pieces are ready.',pieces:'...Nd7, ...Ngf6, ...e6, ...Be7, ...Qc7, O-O; the light bishop has already escaped the chain.',opp:'White often attacks with h5, Bd3, Ne5 and pressure on the kingside.',trigger:'When your king is safe and pieces developed, switch from solidity to ...c5 pressure.',mistake:'Remaining in “Caro shell” mode too long and giving White a free attack.',
+  q:'After solving the light-squared bishop problem, what should Black eventually do?',opts:['Challenge the center with ...c5','Keep every pawn on its starting square','Play ...g5 regardless of the position','Trade queens at any cost'],a:0},
+ {id:'ck-panov',title:'Caro-Kann — Panov',side:'Black',eco:'B13–B14',
+  sans:['e4','c6','d4','d5','exd5','cxd5','c4','Nf6','Nc3','e6','Nf3','Bb4'],
+  goal:'Pressure the isolated d-pawn or force it forward, then use the square in front of it.',breaks:'...c5 can increase pressure; ...e5 can appear tactically after development.',pieces:'...Nf6, ...e6, ...Bb4, O-O, ...Nc6; blockade d5/d4 depending on exchanges.',opp:'White gets active piece play and may push d5 to gain tempo and space.',trigger:'If White cannot make d5 work tactically, increase pressure on d4 and trade pieces.',mistake:'Trying to “win the pawn” immediately and falling behind in development.',
+  q:'What is the long-term target Black often plays against in the Panov?',opts:['The isolated d-pawn','The h2 pawn','The a1 rook','The fianchetto bishop'],a:0},
+ {id:'ck-two',title:'Caro-Kann — Two Knights',side:'Black',eco:'B11',
+  sans:['e4','c6','Nc3','d5','Nf3','Bg4','h3','Bxf3','Qxf3'],
+  goal:'Use the bishop-for-knight trade to gain development and attack the center.',breaks:'...e6 followed by ...Nd7; ...e5 or ...c5 can challenge White depending on setup.',pieces:'...e6, ...Nd7, ...Ngf6; develop quickly because White owns the bishop pair.',opp:'White uses the bishop pair and quick d4/e5 expansion.',trigger:'Open the position only when your development catches up; otherwise White\'s bishops become stronger.',mistake:'Giving up the bishop on f3 and then playing slowly.',
+  q:'After ...Bxf3 in the Two Knights, what compensates Black for giving up the bishop pair?',opts:['Fast development and pressure on White\'s center','A forced pawn win','A permanent king attack','An extra exchange'],a:0}
+];
+let PLAN_SCORE={c:0,t:0};
+let CURRENT_PLAN=null;
+
+function fenFromSans(sans){let fen=INIT;for(const san of sans){const u=san2uci(fen,san);if(!u)return fen;fen=applyUci(fen,u);}return fen;}
+function renderPlanInfo(p){
+  document.getElementById('planinfo').innerHTML=`<div style="font-family:'Playfair Display',serif;color:var(--acc);font-size:1rem;margin-bottom:6px">${p.title}</div>
+  <div class="planmeta"><div class="planbox"><b>Your goal</b><span>${p.goal}</span></div><div class="planbox"><b>Pawn breaks</b><span>${p.breaks}</span></div><div class="planbox"><b>Piece map</b><span>${p.pieces}</span></div><div class="planbox"><b>Opponent wants</b><span>${p.opp}</span></div><div class="planbox"><b>Trigger</b><span>${p.trigger}</span></div><div class="planbox"><b>Common mistake</b><span>${p.mistake}</span></div></div>
+  <div class="tagrow"><span class="tag">${p.side}</span><span class="tag">${p.eco}</span><span class="tag">plan-first training</span></div>`;
+}
+function startPlanQuiz(){
+  CURRENT_PLAN=PLAN_DB[Math.floor(Math.random()*PLAN_DB.length)];
+  FEN=fenFromSans(CURRENT_PLAN.sans);HIST=[FEN];SANS=[];SEL=null;LDOTS=[];LF=null;LT=null;
+  FLIPPED=CURRENT_PLAN.side==='Black';drawBoard();drawMoveList();
+  document.getElementById('opname').textContent=CURRENT_PLAN.title;
+  document.getElementById('opeco').textContent=CURRENT_PLAN.eco;
+  document.getElementById('note').innerHTML='<em>Plan training: understand the position before calculating moves.</em>';
+  document.getElementById('planq').innerHTML='<strong>'+CURRENT_PLAN.q+'</strong>';
+  renderPlanInfo(CURRENT_PLAN);
+  const el=document.getElementById('planopts');el.innerHTML='';
+  const order=CURRENT_PLAN.opts.map((x,i)=>({x,i})).sort(()=>Math.random()-.5);
+  order.forEach(o=>{const b=document.createElement('button');b.className='qopt';b.textContent=o.x;b.onclick=()=>{
+    if(b.dataset.done)return;PLAN_SCORE.t++;el.querySelectorAll('.qopt').forEach(x=>{x.dataset.done='1';x.onclick=null;});
+    if(o.i===CURRENT_PLAN.a){b.classList.add('right');PLAN_SCORE.c++;setStat('✓ Correct — now read the blueprint and connect the plan to the board.','ok');}
+    else{b.classList.add('wrong');[...el.children].forEach(x=>{if(x.textContent===CURRENT_PLAN.opts[CURRENT_PLAN.a])x.classList.add('right')});setStat('✗ Not the main plan. Study the blueprint before the next position.','bad');}
+    document.getElementById('psc').textContent=PLAN_SCORE.c+' / '+PLAN_SCORE.t;
+    localStorage.setItem('chesstool_plan_score',JSON.stringify(PLAN_SCORE));
+  };el.appendChild(b);});
+}
+function loadProgress(){try{const x=JSON.parse(localStorage.getItem('chesstool_plan_score')||'null');if(x&&Number.isFinite(x.c)&&Number.isFinite(x.t))PLAN_SCORE=x;}catch(e){}document.getElementById('psc').textContent=PLAN_SCORE.c+' / '+PLAN_SCORE.t;}
+
+// ─── GAME STATE ──────────────────────────────────────────────────────────────
+// CRITICAL: flipped is ONLY changed by explicit user action (flip button, toggle side, bot color, random line)
+// It is NEVER changed automatically inside rendering or auto-play functions
+let MODE='drill';
+let FEN=INIT;
+let HIST=[INIT];
+let SANS=[];
+let SEL=null;      // {r,f} selected square
+let LDOTS=[];      // [{r,f,san,nextFen}] legal dot squares
+let FLIPPED=false; // board orientation — only user changes this
+let DRILL_COLOR='white'; // which side user drills as
+let SEL_LINES=new Set(DLINES.map(l=>l.id));
+let LF=null,LT=null; // last move from/to squares
+
+// bot state
+let BOT_ACTIVE=false,BOT_THINKING=false,BOT_SKILL=1,BOT_LABEL='Beginner',BOT_COLOR='white';
+let BOT_LOG=[];
+// quiz state
+let Q_SCORE={c:0,t:0};
+// stockfish
+let SF=null,SF_CB=null;
+
+// ─── BOARD RENDERING ─────────────────────────────────────────────────────────
+// CRITICAL: drawBoard ONLY reads FLIPPED, never writes it
+function drawBoard(){
+  const{bd}=parseFen(FEN);
+  const el=document.getElementById('board');
+  el.innerHTML='';
+  for(let vr=0;vr<8;vr++){
+    for(let vf=0;vf<8;vf++){
+      const rank=FLIPPED?vr:7-vr;
+      const file=FLIPPED?7-vf:vf;
+      const sq=document.createElement('div');
+      sq.className='sq '+((rank+file)%2===0?'lt':'dk');
+      if(LF&&LF.r===rank&&LF.f===file)sq.classList.add('lf');
+      if(LT&&LT.r===rank&&LT.f===file)sq.classList.add('lt2');
+      const p=GP(bd,rank,file);
+      if(p)sq.innerHTML=PSV[p]||'';
+      if(SEL&&SEL.r===rank&&SEL.f===file)sq.classList.add('sel');
+      const dot=LDOTS.find(d=>d.r===rank&&d.f===file);
+      if(dot){sq.classList.add(p?'cap':'dot');}
+      sq.addEventListener('click',()=>onSqClick(rank,file));
+      el.appendChild(sq);
+    }
+  }
+  drawCoords();
+}
+
+function drawCoords(){
+  const RANKS=['8','7','6','5','4','3','2','1'];
+  const FILES=['a','b','c','d','e','f','g','h'];
+  const mob=window.innerWidth<=800;
+  const rl=document.getElementById('rlabels');rl.innerHTML='';
+  const fl=document.getElementById('flabels');fl.innerHTML='';
+  (FLIPPED?[...RANKS].reverse():RANKS).forEach(r=>{
+    const d=document.createElement('div');d.className='coord';d.textContent=r;
+    d.style.height=(mob?45:60)+'px';d.style.display='flex';d.style.alignItems='center';
+    rl.appendChild(d);
+  });
+  (FLIPPED?[...FILES].reverse():FILES).forEach(f=>{
+    const d=document.createElement('div');d.className='coord';d.textContent=f;fl.appendChild(d);
+  });
+}
+
+// ─── CLICK HANDLING ──────────────────────────────────────────────────────────
+function onSqClick(rank,file){
+  if(MODE==='quiz')return;
+  if(MODE==='bot'){botClick(rank,file);return;}
+  const{bd,turn}=parseFen(FEN);
+  const p=GP(bd,rank,file);
+
+  if(SEL){
+    const hit=LDOTS.find(d=>d.r===rank&&d.f===file);
+    if(hit){execMove(hit.san,hit.nextFen);return;}
+    if(p&&friendly(p,turn)){SEL={r:rank,f:file};LDOTS=getRepDots(rank,file);drawBoard();return;}
+    SEL=null;LDOTS=[];drawBoard();return;
+  }
+  if(p&&friendly(p,turn)){SEL={r:rank,f:file};LDOTS=getRepDots(rank,file);drawBoard();}
+}
+
+// Get repertoire move dots from a square
+// Uses san2uci which validates against actual legal moves — fixes Bg2 etc.
+function getRepDots(fromR,fromF){
+  const node=DB[FEN];if(!node)return[];
+  const dots=[];
+  for(const[san,nextFen]of Object.entries(node.moves)){
+    const uci=san2uci(FEN,san);
+    if(!uci)continue;
+    if(uci.charCodeAt(0)-97===fromF&&+uci[1]-1===fromR){
+      dots.push({r:+uci[3]-1,f:uci.charCodeAt(2)-97,san,nextFen});
+    }
+  }
+  return dots;
+}
+
+function setLastMove(san){
+  const uci=san2uci(FEN,san);
+  if(!uci){LF=null;LT=null;return;}
+  LF={r:+uci[1]-1,f:uci.charCodeAt(0)-97};
+  LT={r:+uci[3]-1,f:uci.charCodeAt(2)-97};
+}
+
+// Core move executor — NO board flipping here
+function execMove(san,nextFen){
+  setLastMove(san);
+  FEN=nextFen;HIST.push(nextFen);SANS.push(san);
+  SEL=null;LDOTS=[];
+  refreshPanel();drawBoard();drawMoveList();
+
+  if(MODE==='drill'){
+    setStat('✓ Correct!','ok');
+    setTimeout(drillAutoReply,450);
+  } else if(MODE==='explorer'){
+    setStat('','');
+    setTimeout(explorerAutoReply,480);
+  }
+}
+
+// ─── DRILL ───────────────────────────────────────────────────────────────────
+function drillAutoReply(){
+  const{turn}=parseFen(FEN);
+  const dt=DRILL_COLOR==='white'?'w':'b';
+  if(turn===dt){setStat('Your turn — find the next move.','info');return;}
+  const node=DB[FEN];
+  if(!node||!Object.keys(node.moves).length){setStat('🏁 End of line! Reset or try Random Line.','info');return;}
+  const[san,nextFen]=Object.entries(node.moves)[0];
+  setLastMove(san);
+  FEN=nextFen;HIST.push(nextFen);SANS.push(san);
+  refreshPanel();drawBoard();drawMoveList();
+  const nn=DB[FEN];
+  if(!nn||!Object.keys(nn.moves).length)setStat('🏁 End of line! Reset or try Random Line.','info');
+  else setStat('Your turn — find the next move.','info');
+}
+
+// ─── EXPLORER ────────────────────────────────────────────────────────────────
+function explorerAutoReply(){
+  const node=DB[FEN];
+  if(!node||!Object.keys(node.moves).length){
+    setStat('End of repertoire line.','info');renderTree();return;
+  }
+  const[san,nextFen]=Object.entries(node.moves)[0];
+  setLastMove(san);
+  FEN=nextFen;HIST.push(nextFen);SANS.push(san);
+  refreshPanel();drawBoard();drawMoveList();
+  setStat('Computer played '+san+'. Click your next move below.','info');
+  renderTree();
+}
+
+function renderTree(){
+  const el=document.getElementById('tree');el.innerHTML='';
+  const node=DB[FEN];
+  if(!node||!Object.keys(node.moves).length){
+    el.innerHTML='<span class="tlbl">End of repertoire</span>';return;
+  }
+  const{turn}=parseFen(FEN);
+  const lbl=document.createElement('span');lbl.className='tlbl';
+  lbl.textContent=(turn==='w'?'White':'Black')+' to move:';
+  el.appendChild(lbl);
+  Object.entries(node.moves).forEach(([san,nextFen],i)=>{
+    const m=document.createElement('span');
+    m.className='tm'+(i===0?' ml':'');m.textContent=san;
+    m.onclick=()=>execMove(san,nextFen);
+    el.appendChild(m);
+  });
+}
+
+// ─── RANDOM LINE DRILL ───────────────────────────────────────────────────────
+function buildLineSelector(){
+  const el=document.getElementById('linesel');el.innerHTML='';
+  const grps={};
+  DLINES.forEach(l=>{(grps[l.group]=grps[l.group]||[]).push(l);});
+  for(const[g,ls]of Object.entries(grps)){
+    const lbl=document.createElement('div');lbl.className='glbl';lbl.textContent=g;el.appendChild(lbl);
+    ls.forEach(l=>{
+      const chip=document.createElement('label');
+      chip.className='lchip'+(SEL_LINES.has(l.id)?' on':'');
+      const cb=document.createElement('input');cb.type='checkbox';cb.checked=SEL_LINES.has(l.id);
+      cb.onchange=()=>{if(cb.checked){SEL_LINES.add(l.id);chip.classList.add('on');}else{SEL_LINES.delete(l.id);chip.classList.remove('on');}};
+      chip.appendChild(cb);
+      const s=document.createElement('span');s.textContent=l.label;chip.appendChild(s);
+      el.appendChild(chip);
+    });
+  }
+}
+
+function startRandom(){
+  const avail=DLINES.filter(l=>SEL_LINES.has(l.id));
+  if(!avail.length){setStat('Select at least one line!','bad');return;}
+  const line=avail[Math.floor(Math.random()*avail.length)];
+  DRILL_COLOR=line.color;
+  // Set board orientation based on which side we're drilling
+  FLIPPED=line.color==='black';
+  document.getElementById('colorbtn').textContent=line.color==='white'?'White':'Black';
+  fullReset();
+  setStat('Drilling: '+line.label,'info');
+  playUntilUserTurn(line.sans,0,line.color==='white'?'w':'b');
+}
+
+function playUntilUserTurn(sanArr,idx,userTurn){
+  const{turn}=parseFen(FEN);
+  if(turn===userTurn){setStat('Your turn — find the next move.','info');return;}
+  if(idx>=sanArr.length){setStat('Your turn — find the next move.','info');return;}
+  const san=sanArr[idx];
+  const uci=san2uci(FEN,san);
+  if(!uci){setStat('Your turn — find the next move.','info');return;}
+  const nextFen=applyUci(FEN,uci);
+  setTimeout(()=>{
+    setLastMove(san);
+    FEN=nextFen;HIST.push(nextFen);SANS.push(san);
+    refreshPanel();drawBoard();drawMoveList();
+    playUntilUserTurn(sanArr,idx+1,userTurn);
+  },idx===0?220:430);
+}
+
+// ─── QUIZ ─────────────────────────────────────────────────────────────────────
+// Quiz picks a random annotated position and shows it on the board
+// The board does NOT flip — it stays in the current orientation
+function startQuiz(){
+  // Pick positions that have a name (annotated) and are not the start position
+  const positions=Object.entries(DB).filter(([fen,n])=>n.name&&fen!==INIT&&Object.keys(n.moves).length>0);
+  if(!positions.length){setStat('No quiz positions loaded.','bad');return;}
+  const[fen,node]=positions[Math.floor(Math.random()*positions.length)];
+
+  // Update board to show the quiz position — NEVER change FLIPPED here
+  FEN=fen;HIST=[fen];SANS=[];SEL=null;LDOTS=[];LF=null;LT=null;
+
+  const{turn}=parseFen(fen);
+  // Keep the user's chosen board orientation
+
+  drawBoard();
+  drawMoveList();
+
+  // Update opening info
+  document.getElementById('opname').textContent=node.name||'';
+  document.getElementById('opeco').textContent=node.eco||'';
+  document.getElementById('prog').style.width='0%';
+  document.getElementById('note').innerHTML='<em>What is the best move for '+(turn==='w'?'White':'Black')+'?</em>';
+
+  const correct=Object.keys(node.moves)[0];
+
+  // Generate distractors
+  const allSans=new Set();
+  Object.values(DB).forEach(n=>Object.keys(n.moves).forEach(s=>allSans.add(s)));
+  const distractors=[...allSans].filter(s=>s!==correct).sort(()=>Math.random()-.5).slice(0,3);
+  const opts=[correct,...distractors].sort(()=>Math.random()-.5);
+
+  document.getElementById('qq').innerHTML=
+    '<strong>'+node.name+'</strong>'+(node.eco?' ('+node.eco+')':'')+
+    '<br><span style="color:var(--muted)">'+(turn==='w'?'White':'Black')+' to move — choose the best move:</span>';
+
+  const optEl=document.getElementById('qopts');optEl.innerHTML='';
+  opts.forEach(opt=>{
+    const btn=document.createElement('button');
+    btn.className='qopt';btn.textContent=opt;
+    btn.onclick=()=>{
+      if(btn.dataset.done)return;
+      Q_SCORE.t++;
+      optEl.querySelectorAll('.qopt').forEach(b=>{b.dataset.done='1';b.style.cursor='default';b.onclick=null;});
+      if(opt===correct){btn.classList.add('right');Q_SCORE.c++;setStat('✓ Correct! '+(node.note||''),'ok');}
+      else{btn.classList.add('wrong');optEl.querySelectorAll('.qopt').forEach(b=>{if(b.textContent===correct)b.classList.add('right');});setStat('✗ Correct move was '+correct+'.','bad');}
+      document.getElementById('qsc').textContent=Q_SCORE.c+' / '+Q_SCORE.t;
+      setTimeout(startQuiz,2000);
+    };
+    optEl.appendChild(btn);
+  });
+}
+
+// ─── BOT MODE ─────────────────────────────────────────────────────────────────
+function initSF(){
+  if(SF)return;
+  try{
+    SF=new Worker('https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js');
+    SF.onmessage=e=>{
+      if(e.data.startsWith('bestmove')&&SF_CB){
+        const bm=e.data.split(' ')[1];
+        const cb=SF_CB;SF_CB=null;
+        cb(bm&&bm!=='(none)'?bm:null);
+      }
+    };
+    SF.postMessage('uci');SF.postMessage('isready');
+  }catch(err){console.warn('SF failed:',err);}
+}
+
+function sfBestMove(fen,skill,cb){
+  if(!SF){cb(null);return;}
+  SF_CB=cb;
+  const mt=skill<=2?450:skill<=8?950:1500;
+  SF.postMessage('setoption name Skill Level value '+skill);
+  SF.postMessage('position fen '+fen);
+  SF.postMessage('go movetime '+mt);
+}
+
+function setBotSkill(s,lbl){
+  BOT_SKILL=s;BOT_LABEL=lbl;
+  ['sk0','sk1','sk2'].forEach((id,i)=>document.getElementById(id).classList.toggle('on',i===['Beginner','Club','Strong'].indexOf(lbl)));
+}
+function setBotColor(c){
+  BOT_COLOR=c;
+  document.getElementById('bc0').classList.toggle('on',c==='white');
+  document.getElementById('bc1').classList.toggle('on',c==='black');
+}
+
+function startBotGame(){
+  initSF();
+  FLIPPED=BOT_COLOR==='black'; // user perspective
+  fullReset();
+  BOT_ACTIVE=true;
+  BOT_LOG=[];
+  BOT_THINKING=false;
+  document.getElementById('revcard').classList.add('hidden');
+  setStat('You are '+BOT_COLOR+'. Skill: '+BOT_LABEL,'info');
+  if(BOT_COLOR==='black')setTimeout(botThink,500);
+}
+
+function botClick(rank,file){
+  if(!BOT_ACTIVE||BOT_THINKING)return;
+  const{bd,turn}=parseFen(FEN);
+  const playerTurn=BOT_COLOR==='white'?'w':'b';
+  if(turn!==playerTurn)return;
+  const p=GP(bd,rank,file);
+
+  if(SEL){
+    const hit=LDOTS.find(d=>d.r===rank&&d.f===file);
+    if(hit){doBotPlayerMove(hit.uci);return;}
+    if(p&&friendly(p,turn)){SEL={r:rank,f:file};LDOTS=getBotDots(rank,file);drawBoard();return;}
+    SEL=null;LDOTS=[];drawBoard();return;
+  }
+  if(p&&friendly(p,turn)){SEL={r:rank,f:file};LDOTS=getBotDots(rank,file);drawBoard();}
+}
+
+function getBotDots(fromR,fromF){
+  return legalMoves(FEN)
+    .filter(uci=>uci.charCodeAt(0)-97===fromF&&+uci[1]-1===fromR)
+    .map(uci=>({r:+uci[3]-1,f:uci.charCodeAt(2)-97,uci}));
+}
+
+function doBotPlayerMove(uci){
+  const san=uci2san(FEN,uci);
+  LF={r:+uci[1]-1,f:uci.charCodeAt(0)-97};
+  LT={r:+uci[3]-1,f:uci.charCodeAt(2)-97};
+  const nf=applyUci(FEN,uci);
+  BOT_LOG.push({fen:FEN,uci,san,byBot:false});
+  FEN=nf;HIST.push(nf);SANS.push(san);
+  SEL=null;LDOTS=[];
+  refreshPanel();drawBoard();drawMoveList();
+  if(!legalMoves(nf).length){endBot();return;}
+  setTimeout(botThink,360);
+}
+
+function botThink(){
+  if(!BOT_ACTIVE)return;
+  BOT_THINKING=true;
+  setStat(BOT_LABEL+' is thinking…','info');
+  sfBestMove(FEN,BOT_SKILL,uci=>{
+    BOT_THINKING=false;
+    if(!uci||!BOT_ACTIVE){endBot();return;}
+    const san=uci2san(FEN,uci);
+    LF={r:+uci[1]-1,f:uci.charCodeAt(0)-97};
+    LT={r:+uci[3]-1,f:uci.charCodeAt(2)-97};
+    const nf=applyUci(FEN,uci);
+    BOT_LOG.push({fen:FEN,uci,san,byBot:true});
+    FEN=nf;HIST.push(nf);SANS.push(san);
+    refreshPanel();drawBoard();drawMoveList();
+    if(!legalMoves(nf).length){endBot();return;}
+    setStat('Your turn.','info');
+  });
+}
+
+function endBot(){
+  BOT_ACTIVE=false;
+  setStat(inCheck(FEN,parseFen(FEN).turn)?'Checkmate!':'Game over! Click Review.','info');
+  document.getElementById('revbtn').classList.remove('hidden');
+}
+
+function showReview(){
+  if(!BOT_LOG.length){setStat('No game to review.','bad');return;}
+  document.getElementById('revcard').classList.remove('hidden');
+  const el=document.getElementById('revlist');el.innerHTML='';
+  BOT_LOG.forEach((e,i)=>{
+    const mn=Math.floor(i/2)+1;
+    const div=document.createElement('div');div.className='ri';
+    const rn=DB[e.fen];
+    let c='',cls='rn';
+    if(!e.byBot){
+      if(rn&&rn.moves[e.san]){c='In repertoire ✓';cls='rg';}
+      else if(rn){c='Deviation from repertoire';cls='rb';}
+      else{c='Out of book';cls='rn';}
+    }else{c='Bot played';}
+    div.innerHTML='<span class="rm">'+mn+(e.byBot?'… ':'. ')+e.san+'</span> <span class="'+cls+'">'+c+'</span>';
+    el.appendChild(div);
+  });
+}
+
+// ─── PANEL / STATUS ──────────────────────────────────────────────────────────
+function refreshPanel(){
+  const node=DB[FEN];
+  document.getElementById('opname').textContent=node?.name||'Unknown Position';
+  document.getElementById('opeco').textContent=node?.eco||'';
+  document.getElementById('note').innerHTML=node?.note||'<em>Position not in repertoire.</em>';
+  document.getElementById('prog').style.width=Math.min(100,(SANS.length/12)*100)+'%';
+}
+function setStat(msg,cls){const e=document.getElementById('stat');e.textContent=msg;e.className=cls||'';}
+function drawMoveList(){
+  const el=document.getElementById('mvlist');el.innerHTML='';
+  for(let i=0;i<SANS.length;i++){
+    if(i%2===0){const n=document.createElement('span');n.className='mn';n.textContent=(Math.floor(i/2)+1)+'.';el.appendChild(n);}
+    const m=document.createElement('span');m.className='mt'+(i===SANS.length-1?' cur':'');m.textContent=SANS[i];
+    const idx=i;m.onclick=()=>{FEN=HIST[idx+1];HIST=HIST.slice(0,idx+2);SANS=SANS.slice(0,idx+1);SEL=null;LDOTS=[];LF=null;LT=null;refreshPanel();drawBoard();drawMoveList();};
+    el.appendChild(m);
+  }
+  el.scrollTop=el.scrollHeight;
+}
+
+// ─── CONTROLS ────────────────────────────────────────────────────────────────
+function goBack(){
+  if(HIST.length<=1)return;
+  HIST.pop();SANS.pop();FEN=HIST[HIST.length-1];
+  SEL=null;LDOTS=[];LF=null;LT=null;
+  refreshPanel();drawBoard();drawMoveList();
+  if(MODE==='explorer')renderTree();
+}
+
+// fullReset resets position but NOT FLIPPED — FLIPPED is only changed by explicit user actions
+function fullReset(){
+  FEN=INIT;HIST=[INIT];SANS=[];SEL=null;LDOTS=[];LF=null;LT=null;
+  BOT_ACTIVE=false;BOT_LOG=[];
+  refreshPanel();drawBoard();drawMoveList();
+}
+
+function doReset(){
+  fullReset();
+  if(MODE==='drill'&&DRILL_COLOR==='black'){setTimeout(()=>drillAutoReply(),300);}
+  if(MODE==='explorer'){renderTree();}
+  setStat('Reset.','info');
+}
+
+function doHint(){
+  if(MODE==='bot'){setStat('No hints in bot mode.','bad');return;}
+  const node=DB[FEN];
+  if(!node||!Object.keys(node.moves).length){setStat('No moves in repertoire here.','info');return;}
+  setStat('💡 Hint: try '+Object.keys(node.moves)[0],'info');
+}
+
+function doFlip(){FLIPPED=!FLIPPED;drawBoard();}
+
+function toggleSide(){
+  DRILL_COLOR=DRILL_COLOR==='white'?'black':'white';
+  FLIPPED=DRILL_COLOR==='black';
+  document.getElementById('colorbtn').textContent=DRILL_COLOR==='white'?'White':'Black';
+  fullReset();
+  if(DRILL_COLOR==='black')setTimeout(()=>drillAutoReply(),350);
+  setStat('Playing as '+DRILL_COLOR+'. Make your moves.','info');
+}
+
+// ─── MODE SWITCHING ───────────────────────────────────────────────────────────
+function setMode(mode){
+  MODE=mode;BOT_ACTIVE=false;SEL=null;LDOTS=[];
+  // Only reset flip when switching away from bot mode or when going to explorer/quiz
+  if(mode==='drill'){FLIPPED=DRILL_COLOR==='black';}
+  // explorer and quiz now keep the current orientation
+  // bot mode flip is set when starting a game
+
+  document.querySelectorAll('.nb').forEach((b,i)=>b.classList.toggle('on',['drill','explorer','quiz','plans','bot'][i]===mode));
+
+  // card visibility
+  show('linecard',mode==='drill');
+  show('expcard',mode==='explorer');
+  show('quizcard',mode==='quiz');
+  show('plancard',mode==='plans');
+  show('planinfocard',mode==='plans');
+  show('botcard',mode==='bot');
+  show('colorbtn',mode==='drill');
+  show('randbtn',mode==='drill');
+  show('newgamebtn',mode==='bot');
+  show('revbtn',false);
+  show('hintbtn',mode!=='bot');
+  document.getElementById('revcard').classList.add('hidden');
+
+  fullReset();
+
+  if(mode==='drill'){buildLineSelector();setStat('Pick lines → Random Line, or move pieces freely.','info');}
+  if(mode==='explorer'){setStat('Click a move below — computer replies automatically.','info');renderTree();}
+  if(mode==='quiz'){setStat('','');startQuiz();}
+  if(mode==='plans'){setStat('Choose the plan that fits the position — then study the blueprint.','info');startPlanQuiz();}
+  if(mode==='bot'){setStat('Set skill & color → New Game.','info');initSF();}
+}
+
+function show(id,visible){
+  const el=document.getElementById(id);
+  if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
+buildLineSelector();
+loadProgress();
+drawBoard();
+refreshPanel();
+drawMoveList();
+setStat('Pick lines and click Random Line — or move pieces freely.','info');
+</script>
+</body>
+</html>
