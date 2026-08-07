@@ -47,8 +47,12 @@ let BOT_ACTIVE=false,BOT_THINKING=false,BOT_SKILL=1,BOT_LABEL='Beginner',BOT_COL
 let BOT_LOG=[];
 // quiz state
 let Q_SCORE={c:0,t:0};
+let QUIZ_OPTIONS=[]; // [{uci,san,correct}]
+let QUIZ_CORRECT=null;
+let QUIZ_DONE=false;
+let QUIZ_RESULT=null;
 // stockfish
-let SF=null,SF_CB=null;
+let SF=null,SF_CB=null,SF_READY=false,SF_FAILED=false,SF_TIMER=null;
 
 // ─── BOARD RENDERING ─────────────────────────────────────────────────────────
 // CRITICAL: drawBoard ONLY reads FLIPPED, never writes it
@@ -65,7 +69,28 @@ function drawBoard(){
       if(LF&&LF.r===rank&&LF.f===file)sq.classList.add('lf');
       if(LT&&LT.r===rank&&LT.f===file)sq.classList.add('lt2');
       const p=GP(bd,rank,file);
-      if(p)sq.innerHTML=PSV[p]||'';
+
+      // In Quiz mode, show the candidate source pieces and four destination
+      // squares directly on the board. The user answers by making a move.
+      if(MODE==='quiz'&&QUIZ_OPTIONS.length){
+        const srcOpts=QUIZ_OPTIONS.filter(o=>+o.uci[1]-1===rank&&o.uci.charCodeAt(0)-97===file);
+        const dstOpts=QUIZ_OPTIONS.filter(o=>+o.uci[3]-1===rank&&o.uci.charCodeAt(2)-97===file);
+        if(srcOpts.length)sq.classList.add('qsrc');
+        if(dstOpts.length){
+          sq.classList.add('qdest');
+          const badge=document.createElement('span');
+          badge.className='qbadge';
+          badge.textContent=dstOpts[0].n;
+          sq.appendChild(badge);
+        }
+        if(QUIZ_RESULT){
+          const ur=S2A(rank,file);
+          if(ur===QUIZ_RESULT.correctUci.slice(2,4))sq.classList.add('qrightsq');
+          if(QUIZ_RESULT.chosenUci!==QUIZ_RESULT.correctUci&&ur===QUIZ_RESULT.chosenUci.slice(2,4))sq.classList.add('qwrongsq');
+        }
+      }
+
+      if(p)sq.insertAdjacentHTML('afterbegin',PSV[p]||'');
       if(SEL&&SEL.r===rank&&SEL.f===file)sq.classList.add('sel');
       const dot=LDOTS.find(d=>d.r===rank&&d.f===file);
       if(dot){sq.classList.add(p?'cap':'dot');}
@@ -94,7 +119,8 @@ function drawCoords(){
 
 // ─── CLICK HANDLING ──────────────────────────────────────────────────────────
 function onSqClick(rank,file){
-  if(MODE==='quiz'||MODE==='plans')return;
+  if(MODE==='quiz'){quizClick(rank,file);return;}
+  if(MODE==='plans')return;
   if(MODE==='bot'){botClick(rank,file);return;}
   const{bd,turn}=parseFen(FEN);
 
@@ -156,8 +182,8 @@ function execMove(san,nextFen){
     setStat('✓ Correct!','ok');
     setTimeout(drillAutoReply,450);
   } else if(MODE==='explorer'){
-    setStat('','');
-    setTimeout(explorerAutoReply,480);
+    setStat("Study mode — choose either side's next repertoire move.",'info');
+    renderTree();
   }
 }
 
@@ -261,81 +287,196 @@ function playUntilUserTurn(sanArr,idx,userTurn){
 }
 
 // ─── QUIZ ─────────────────────────────────────────────────────────────────────
-// Quiz picks a random annotated position and shows it on the board
-// The board does NOT flip — it stays in the current orientation
+// Move-based quiz: four legal candidates are marked on the board. Select a
+// highlighted source piece, then move it to one of the numbered destinations.
 function startQuiz(){
-  // Pick positions that have a name (annotated) and are not the start position
-  const positions=Object.entries(DB).filter(([fen,n])=>n.name&&fen!==INIT&&Object.keys(n.moves).length>0);
+  const positions=Object.entries(DB).filter(([fen,n])=>
+    n.name&&fen!==INIT&&Object.keys(n.moves).length>0&&legalMoves(fen).length>=4
+  );
   if(!positions.length){setStat('No quiz positions loaded.','bad');return;}
-  const[fen,node]=positions[Math.floor(Math.random()*positions.length)];
 
-  // Update board to show the quiz position — NEVER change FLIPPED here
+  const[fen,node]=positions[Math.floor(Math.random()*positions.length)];
   FEN=fen;HIST=[fen];SANS=[];SEL=null;LDOTS=[];LF=null;LT=null;
+  QUIZ_DONE=false;QUIZ_RESULT=null;QUIZ_OPTIONS=[];
 
   const{turn}=parseFen(fen);
-  // Keep the user's chosen board orientation
+  // Always face the side whose move is being tested.
+  FLIPPED=turn==='b';
 
-  drawBoard();
-  drawMoveList();
+  const correctSan=Object.keys(node.moves)[0];
+  const correctUci=san2uci(fen,correctSan);
+  if(!correctUci){setTimeout(startQuiz,0);return;}
 
-  // Update opening info
+  const legal=legalMoves(fen).map(uci=>({uci,san:uci2san(fen,uci)}));
+  const correct={uci:correctUci,san:correctSan,correct:true};
+
+  // Prefer distinct destination squares so the four board choices stay clear.
+  const shuffled=legal.filter(x=>x.uci!==correctUci).sort(()=>Math.random()-.5);
+  const usedDst=new Set([correctUci.slice(2,4)]);
+  const distractors=[];
+  for(const x of shuffled){
+    const dst=x.uci.slice(2,4);
+    if(usedDst.has(dst))continue;
+    usedDst.add(dst);distractors.push({...x,correct:false});
+    if(distractors.length===3)break;
+  }
+  // Extremely rare fallback if a position has fewer than four unique targets.
+  for(const x of shuffled){
+    if(distractors.length===3)break;
+    if(!distractors.some(d=>d.uci===x.uci))distractors.push({...x,correct:false});
+  }
+
+  QUIZ_OPTIONS=[correct,...distractors].sort(()=>Math.random()-.5).map((x,i)=>({...x,n:i+1}));
+  QUIZ_CORRECT=correctUci;
+
   document.getElementById('opname').textContent=node.name||'';
   document.getElementById('opeco').textContent=node.eco||'';
   document.getElementById('prog').style.width='0%';
-  document.getElementById('note').innerHTML='<em>What is the best move for '+(turn==='w'?'White':'Black')+'?</em>';
-
-  const correct=Object.keys(node.moves)[0];
-
-  // Generate distractors
-  const allSans=new Set();
-  Object.values(DB).forEach(n=>Object.keys(n.moves).forEach(s=>allSans.add(s)));
-  const distractors=[...allSans].filter(s=>s!==correct).sort(()=>Math.random()-.5).slice(0,3);
-  const opts=[correct,...distractors].sort(()=>Math.random()-.5);
-
+  document.getElementById('note').innerHTML='<em>Find the repertoire move by moving a piece on the board.</em>';
   document.getElementById('qq').innerHTML=
     '<strong>'+node.name+'</strong>'+(node.eco?' ('+node.eco+')':'')+
-    '<br><span style="color:var(--muted)">'+(turn==='w'?'White':'Black')+' to move — choose the best move:</span>';
+    '<br><span style="color:var(--muted)">'+(turn==='w'?'White':'Black')+' to move. Choose one of the four highlighted moves.</span>';
 
   const optEl=document.getElementById('qopts');optEl.innerHTML='';
-  opts.forEach(opt=>{
-    const btn=document.createElement('button');
-    btn.className='qopt';btn.textContent=opt;
-    btn.onclick=()=>{
-      if(btn.dataset.done)return;
-      Q_SCORE.t++;
-      optEl.querySelectorAll('.qopt').forEach(b=>{b.dataset.done='1';b.style.cursor='default';b.onclick=null;});
-      if(opt===correct){btn.classList.add('right');Q_SCORE.c++;setStat('✓ Correct! '+(node.note||''),'ok');}
-      else{btn.classList.add('wrong');optEl.querySelectorAll('.qopt').forEach(b=>{if(b.textContent===correct)b.classList.add('right');});setStat('✗ Correct move was '+correct+'.','bad');}
-      document.getElementById('qsc').textContent=Q_SCORE.c+' / '+Q_SCORE.t;
-      setTimeout(startQuiz,2000);
-    };
-    optEl.appendChild(btn);
+  QUIZ_OPTIONS.forEach(o=>{
+    const chip=document.createElement('div');chip.className='qmovechip';
+    chip.innerHTML='<span>'+o.n+'</span>'+o.san;
+    optEl.appendChild(chip);
   });
+
+  drawBoard();drawMoveList();
+  setStat('Move a highlighted piece to one of the numbered squares.','info');
+}
+
+function quizClick(rank,file){
+  if(QUIZ_DONE||!QUIZ_OPTIONS.length)return;
+  const{bd,turn}=parseFen(FEN);
+  const p=GP(bd,rank,file);
+
+  if(SEL){
+    const hit=LDOTS.find(d=>d.r===rank&&d.f===file);
+    if(hit){gradeQuizMove(hit);return;}
+
+    const newOpts=QUIZ_OPTIONS.filter(o=>+o.uci[1]-1===rank&&o.uci.charCodeAt(0)-97===file);
+    if(p&&friendly(p,turn)&&newOpts.length){
+      SEL={r:rank,f:file};
+      LDOTS=newOpts.map(o=>({r:+o.uci[3]-1,f:o.uci.charCodeAt(2)-97,uci:o.uci,san:o.san,n:o.n}));
+      drawBoard();return;
+    }
+    SEL=null;LDOTS=[];drawBoard();return;
+  }
+
+  const opts=QUIZ_OPTIONS.filter(o=>+o.uci[1]-1===rank&&o.uci.charCodeAt(0)-97===file);
+  if(p&&friendly(p,turn)&&opts.length){
+    SEL={r:rank,f:file};
+    LDOTS=opts.map(o=>({r:+o.uci[3]-1,f:o.uci.charCodeAt(2)-97,uci:o.uci,san:o.san,n:o.n}));
+    drawBoard();
+  }
+}
+
+function gradeQuizMove(hit){
+  QUIZ_DONE=true;Q_SCORE.t++;
+  const correct=hit.uci===QUIZ_CORRECT;
+  if(correct)Q_SCORE.c++;
+  QUIZ_RESULT={chosenUci:hit.uci,correctUci:QUIZ_CORRECT};
+  SEL=null;LDOTS=[];
+  document.getElementById('qsc').textContent=Q_SCORE.c+' / '+Q_SCORE.t;
+  const node=DB[FEN];
+  if(correct)setStat('✓ Correct! '+(node?.note||''),'ok');
+  else setStat('✗ You played '+hit.san+'. Repertoire move: '+uci2san(FEN,QUIZ_CORRECT)+'.','bad');
+  drawBoard();
+  setTimeout(startQuiz,2200);
 }
 
 // ─── BOT MODE ─────────────────────────────────────────────────────────────────
+// GitHub Pages/iOS can reject a cross-origin Worker constructor. We first try
+// loading Stockfish through a same-origin Blob worker. If that fails, the game
+// continues with the built-in fallback engine instead of declaring "game over".
 function initSF(){
-  if(SF)return;
-  try{
-    SF=new Worker('https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js');
-    SF.onmessage=e=>{
-      if(e.data.startsWith('bestmove')&&SF_CB){
-        const bm=e.data.split(' ')[1];
-        const cb=SF_CB;SF_CB=null;
-        cb(bm&&bm!=='(none)'?bm:null);
+  if(SF||SF_FAILED)return;
+  fetch('https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js')
+    .then(r=>{if(!r.ok)throw new Error('Stockfish HTTP '+r.status);return r.text();})
+    .then(code=>{
+      const blob=new Blob([code],{type:'text/javascript'});
+      SF=new Worker(URL.createObjectURL(blob));
+      SF.onmessage=e=>{
+        const msg=String(e.data||'');
+        if(msg==='readyok'||msg.includes('uciok'))SF_READY=true;
+        if(msg.startsWith('bestmove')&&SF_CB){
+          clearTimeout(SF_TIMER);
+          const bm=msg.split(' ')[1];
+          const cb=SF_CB;SF_CB=null;
+          cb(bm&&bm!=='(none)'?bm:null);
+        }
+      };
+      SF.onerror=()=>{SF_FAILED=true;SF_READY=false;try{SF.terminate();}catch(e){}SF=null;};
+      SF.postMessage('uci');SF.postMessage('isready');
+    })
+    .catch(err=>{console.warn('Stockfish unavailable; using fallback bot.',err);SF_FAILED=true;});
+}
+
+function materialValue(p){return({P:100,N:320,B:330,R:500,Q:900,K:0})[p?.toUpperCase()]||0;}
+function staticEval(fen,forSide){
+  const{bd}=parseFen(fen);let score=0;
+  for(let r=0;r<8;r++)for(let f=0;f<8;f++){
+    const p=GP(bd,r,f);if(!p)continue;
+    let v=materialValue(p);
+    // small centralization bonus; enough to make the fallback play plausible openings
+    if('NBRQ'.includes(p.toUpperCase()))v+=Math.max(0,4-Math.abs(3.5-f)-Math.abs(3.5-r))*3;
+    score+=(isW(p)?1:-1)*v;
+  }
+  return forSide==='w'?score:-score;
+}
+function localBestMove(fen,skill){
+  const{turn,bd}=parseFen(fen);const moves=legalMoves(fen);
+  if(!moves.length)return null;
+  const scored=moves.map(uci=>{
+    const tf=uci.charCodeAt(2)-97,tr=+uci[3]-1;
+    const captured=GP(bd,tr,tf);
+    const nf=applyUci(fen,uci);
+    let s=staticEval(nf,turn)+(captured?materialValue(captured)*.7:0)+(inCheck(nf,turn==='w'?'b':'w')?35:0);
+    // Club/Strong look one opponent move ahead and discount their best reply.
+    if(skill>=8){
+      const replies=legalMoves(nf);
+      if(replies.length){
+        let worst=Infinity;
+        for(const r of replies.slice(0,skill>=16?40:20)){
+          const rf=applyUci(nf,r);
+          worst=Math.min(worst,staticEval(rf,turn));
+        }
+        if(worst<Infinity)s=.55*s+.45*worst;
       }
-    };
-    SF.postMessage('uci');SF.postMessage('isready');
-  }catch(err){console.warn('SF failed:',err);}
+    }
+    return{uci,s};
+  }).sort((a,b)=>b.s-a.s);
+  if(skill<=2){
+    const pool=scored.slice(0,Math.min(8,scored.length));
+    return pool[Math.floor(Math.random()*pool.length)].uci;
+  }
+  if(skill<16){
+    const pool=scored.slice(0,Math.min(3,scored.length));
+    return pool[Math.floor(Math.random()*pool.length)].uci;
+  }
+  return scored[0].uci;
 }
 
 function sfBestMove(fen,skill,cb){
-  if(!SF){cb(null);return;}
-  SF_CB=cb;
-  const mt=skill<=2?450:skill<=8?950:1500;
-  SF.postMessage('setoption name Skill Level value '+skill);
-  SF.postMessage('position fen '+fen);
-  SF.postMessage('go movetime '+mt);
+  const fallback=()=>setTimeout(()=>cb(localBestMove(fen,skill)),180);
+  if(!SF||SF_FAILED){fallback();return;}
+  SF_CB=move=>cb(move||localBestMove(fen,skill));
+  const mt=skill<=2?400:skill<=8?800:1300;
+  try{
+    SF.postMessage('setoption name Skill Level value '+skill);
+    SF.postMessage('position fen '+fen);
+    SF.postMessage('go movetime '+mt);
+    // Never let an engine-loading/browser issue terminate the chess game.
+    clearTimeout(SF_TIMER);
+    SF_TIMER=setTimeout(()=>{
+      if(SF_CB){const done=SF_CB;SF_CB=null;done(localBestMove(fen,skill));}
+    },mt+1800);
+  }catch(e){
+    SF_FAILED=true;SF=null;SF_CB=null;fallback();
+  }
 }
 
 function setBotSkill(s,lbl){
@@ -401,7 +542,8 @@ function botThink(){
   setStat(BOT_LABEL+' is thinking…','info');
   sfBestMove(FEN,BOT_SKILL,uci=>{
     BOT_THINKING=false;
-    if(!uci||!BOT_ACTIVE){endBot();return;}
+    if(!BOT_ACTIVE)return;
+    if(!uci){const lm=legalMoves(FEN);if(!lm.length){endBot();return;}uci=localBestMove(FEN,BOT_SKILL);if(!uci){endBot();return;}}
     const san=uci2san(FEN,uci);
     LF={r:+uci[1]-1,f:uci.charCodeAt(0)-97};
     LT={r:+uci[3]-1,f:uci.charCodeAt(2)-97};
@@ -486,6 +628,7 @@ function doReset(){
 
 function doHint(){
   if(MODE==='bot'){setStat('No hints in bot mode.','bad');return;}
+  if(MODE==='quiz'){setStat('Hint: the repertoire move is '+uci2san(FEN,QUIZ_CORRECT)+'.','info');return;}
   const node=DB[FEN];
   if(!node||!Object.keys(node.moves).length){setStat('No moves in repertoire here.','info');return;}
   setStat('💡 Hint: try '+Object.keys(node.moves)[0],'info');
@@ -504,7 +647,7 @@ function toggleSide(){
 
 // ─── MODE SWITCHING ───────────────────────────────────────────────────────────
 function setMode(mode){
-  MODE=mode;BOT_ACTIVE=false;SEL=null;LDOTS=[];
+  MODE=mode;BOT_ACTIVE=false;SEL=null;LDOTS=[];QUIZ_OPTIONS=[];QUIZ_RESULT=null;QUIZ_DONE=false;
   // Only reset flip when switching away from bot mode or when going to explorer/quiz
   if(mode==='drill'){FLIPPED=DRILL_COLOR==='black';}
   // explorer and quiz now keep the current orientation
@@ -528,9 +671,9 @@ function setMode(mode){
 
   fullReset();
 
-  if(mode==='drill'){buildLineSelector();setStat('Pick lines → Random Line, or move pieces freely.','info');}
-  if(mode==='explorer'){setStat('Click a move below — computer replies automatically.','info');renderTree();}
-  if(mode==='quiz'){setStat('','');startQuiz();}
+  if(mode==='drill'){buildLineSelector();setStat('TRAIN: recall your move from memory; the opponent replies automatically.','info');}
+  if(mode==='explorer'){setStat('STUDY: browse either side freely; all repertoire continuations are shown.','info');renderTree();}
+  if(mode==='quiz'){startQuiz();}
   if(mode==='plans'){setStat('Choose the plan that fits the position — then study the blueprint.','info');startPlanQuiz();}
   if(mode==='bot'){setStat('Set skill & color → New Game.','info');initSF();}
 }
@@ -540,7 +683,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2 loaded: modular repertoire + plans architecture');
+console.info('ChessTool V2.1 loaded: move quizzes + resilient bot + distinct Train/Study modes');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
@@ -549,4 +692,4 @@ loadProgress();
 drawBoard();
 refreshPanel();
 drawMoveList();
-setStat('Pick lines and click Random Line — or move pieces freely.','info');
+setStat('TRAIN: recall your move from memory; the opponent replies automatically.','info');
