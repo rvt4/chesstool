@@ -32,6 +32,10 @@ function loadProgress(){try{const x=JSON.parse(localStorage.getItem('chesstool_p
 // CRITICAL: flipped is ONLY changed by explicit user action (flip button, toggle side, bot color, random line)
 // It is NEVER changed automatically inside rendering or auto-play functions
 let MODE='drill';
+let STUDY_PHASE='opening'; // opening | middlegame
+let STUDY_PLAN=null;
+let STUDY_PLAN_START_PLY=0;
+let STUDY_PLAN_TARGET_PLY=0;
 let FEN=INIT;
 let HIST=[INIT];
 let SANS=[];
@@ -46,7 +50,7 @@ let PRACTICE_LOCK=false;
 let LF=null,LT=null; // last move from/to squares
 
 // bot state
-let BOT_ACTIVE=false,BOT_THINKING=false,BOT_SKILL=1,BOT_LABEL='Beginner',BOT_COLOR='white',BOT_GAME_COLOR='white';
+let BOT_ACTIVE=false,BOT_THINKING=false,BOT_SKILL=10,BOT_LABEL='1600',BOT_COLOR='white',BOT_GAME_COLOR='white';
 let BOT_LOG=[];
 // quiz state
 let Q_SCORE={c:0,t:0};
@@ -56,6 +60,7 @@ let QUIZ_DONE=false;
 let QUIZ_RESULT=null;
 // stockfish
 let SF=null,SF_CB=null,SF_READY=false,SF_FAILED=false,SF_TIMER=null;
+let SF_ANALYSIS_QUEUE=Promise.resolve();
 let SF_LAST_INFO=null;
 let REVIEW_FENS=[],REVIEW_INDEX=0,REVIEW_RESULTS=[];
 let LAST_COACH='';
@@ -155,6 +160,10 @@ function renderStudy(){
   el.innerHTML='';
   if(MODE!=='explorer')return;
   if(!SESSION_STARTED){el.innerHTML='<span class="tlbl">Choose lines and press Start Session.</span>';return;}
+  if(STUDY_PHASE==='middlegame'){
+    el.innerHTML='<span class="tlbl">Middlegame Lab · '+(STUDY_PLAN?.title||'Strategic position')+'</span>';
+    renderIntegratedPlan();return;
+  }
   const{turn}=parseFen(FEN),userTurn=SESSION_COLOR==='white'?'w':'b';
   if(turn!==userTurn){el.innerHTML='<span class="tlbl">Opponent is choosing a repertoire continuation…</span>';return;}
   const moves=expectedPracticeMoves();
@@ -171,7 +180,7 @@ function renderIntegratedPlan(){
   const host=document.getElementById('studyplan');if(!host)return;
   host.innerHTML='';
   if(MODE!=='explorer')return;
-  const plan=PLAN_DB.find(p=>fenFromSans(p.sans)===FEN);
+  const plan=STUDY_PHASE==='middlegame'?STUDY_PLAN:PLAN_DB.find(p=>fenFromSans(p.sans)===FEN);
   if(!plan){host.innerHTML='<span class="tlbl">A middlegame blueprint will appear here when this line reaches a stored strategic structure.</span>';return;}
   host.innerHTML=`<div class="planmeta"><div class="planbox"><b>Main goal</b><span>${plan.goal}</span></div><div class="planbox"><b>Pawn breaks</b><span>${plan.breaks}</span></div><div class="planbox"><b>Piece map</b><span>${plan.pieces}</span></div><div class="planbox"><b>Opponent wants</b><span>${plan.opp}</span></div><div class="planbox"><b>Trigger</b><span>${plan.trigger}</span></div><div class="planbox"><b>Avoid</b><span>${plan.mistake}</span></div></div>`;
 }
@@ -187,7 +196,7 @@ function onSqClick(rank,file){
 
   if(SEL){
     const hit=LDOTS.find(d=>d.r===rank&&d.f===file);
-    if(hit){handlePracticeMove(hit.uci);return;}
+    if(hit){if(MODE==='explorer'&&STUDY_PHASE==='middlegame')handleStudyMiddlegameMove(hit.uci);else handlePracticeMove(hit.uci);return;}
     if(p&&friendly(p,turn)){SEL={r:rank,f:file};LDOTS=getLegalDots(rank,file);drawBoard();return;}
     SEL=null;LDOTS=[];drawBoard();return;
   }
@@ -273,7 +282,7 @@ function startRandom(){
   // Pick which repertoire side to train, then keep ALL selected lines for that
   // side alive. Opponent branches are sampled randomly as the game develops.
   const seed=avail[Math.floor(Math.random()*avail.length)];
-  SESSION_COLOR=seed.color;DRILL_COLOR=seed.color;SESSION_STARTED=true;PRACTICE_LOCK=false;
+  SESSION_COLOR=seed.color;DRILL_COLOR=seed.color;SESSION_STARTED=true;PRACTICE_LOCK=false;STUDY_PHASE='opening';STUDY_PLAN=null;
   FLIPPED=SESSION_COLOR==='black';
   fullReset();SESSION_STARTED=true; // fullReset clears board state only; restore session flag
   const family=SESSION_COLOR==='white'?'English as White':'Caro-Kann as Black';
@@ -283,14 +292,64 @@ function startRandom(){
   setTimeout(practiceAutoReply,350);
 }
 
-function finishPracticeLine(){
+
+function findStudyPlan(){
+  // Prefer a plan whose stored structure is reached by the line just studied.
+  const matching=PLAN_DB.filter(p=>{
+    if((SESSION_COLOR==='white')!==(p.side==='White'))return false;
+    const n=Math.min(SANS.length,p.sans.length);
+    return n>=6&&SANS.slice(0,n).every((s,i)=>p.sans[i]===s);
+  });
+  if(matching.length)return matching.sort((a,b)=>b.sans.length-a.sans.length)[0];
+  // Fallback to the same repertoire side so Study never becomes a dead end.
+  const same=PLAN_DB.filter(p=>(SESSION_COLOR==='white')===(p.side==='White'));
+  return same[Math.floor(Math.random()*same.length)]||null;
+}
+function beginMiddlegameStudy(){
+  STUDY_PHASE='middlegame';STUDY_PLAN=findStudyPlan();
+  if(!STUDY_PLAN){finishPracticeLine(true);return;}
+  let pf=fenFromSans(STUDY_PLAN.sans);
+  FEN=pf;HIST=[pf];SANS=[...STUDY_PLAN.sans];SEL=null;LDOTS=[];LF=null;LT=null;
+  STUDY_PLAN_START_PLY=SANS.length;STUDY_PLAN_TARGET_PLY=STUDY_PLAN_START_PLY+20;
+  FLIPPED=SESSION_COLOR==='black';PRACTICE_LOCK=false;SESSION_STARTED=true;
+  refreshPanel();drawBoard();drawMoveList();renderStudy();
+  const msg='MIDDLEGAME LAB: '+STUDY_PLAN.title+'. Play about 10 moves from here while applying the blueprint.';
+  setStat(msg,'info');setCoach(msg);
+  if(parseFen(FEN).turn!==(SESSION_COLOR==='white'?'w':'b'))setTimeout(studyPlanBotReply,350);
+}
+function studyPlanBotReply(){
+  if(MODE!=='explorer'||STUDY_PHASE!=='middlegame'||!SESSION_STARTED)return;
+  const userTurn=SESSION_COLOR==='white'?'w':'b';
+  if(parseFen(FEN).turn===userTurn)return;
+  sfBestMove(FEN,12,uci=>{
+    if(!SESSION_STARTED||STUDY_PHASE!=='middlegame')return;
+    if(!uci){finishPracticeLine(true);return;}
+    const san=uci2san(FEN,uci);setLastUci(uci);
+    FEN=applyUci(FEN,uci);HIST.push(FEN);SANS.push(san);SEL=null;LDOTS=[];
+    refreshPanel();drawBoard();drawMoveList();renderStudy();
+    if(SANS.length>=STUDY_PLAN_TARGET_PLY||!legalMoves(FEN).length){finishPracticeLine(true);return;}
+    setCoach('Opponent played '+san+'. Keep working the middlegame blueprint.');
+  });
+}
+function handleStudyMiddlegameMove(uci){
+  const san=uci2san(FEN,uci);setLastUci(uci);
+  FEN=applyUci(FEN,uci);HIST.push(FEN);SANS.push(san);SEL=null;LDOTS=[];
+  refreshPanel();drawBoard();drawMoveList();renderStudy();
+  const msg='You played '+san+'. Ask: did this improve the plan, prepare the pawn break, or stop the opponent’s counterplay?';
+  setStat(msg,'info');setCoach(msg);
+  if(SANS.length>=STUDY_PLAN_TARGET_PLY||!legalMoves(FEN).length){finishPracticeLine(true);return;}
+  setTimeout(studyPlanBotReply,350);
+}
+
+function finishPracticeLine(fromMiddlegame=false){
+  if(MODE==='explorer'&&!fromMiddlegame&&STUDY_PHASE==='opening'){beginMiddlegameStudy();return;}
   SESSION_STARTED=false;PRACTICE_LOCK=true;SEL=null;LDOTS=[];
-  const msg='🏁 Repertoire line complete. Start Session again for another randomized branch.';
+  const msg=fromMiddlegame?'🏁 Middlegame lab complete. Start Session for another opening → plan sequence.':'🏁 Repertoire line complete. Start Session again for another randomized branch.';
   setStat(msg,'ok');setCoach(msg);renderStudy();drawBoard();
 }
 
 function practiceAutoReply(){
-  if(!SESSION_STARTED||PRACTICE_LOCK||(MODE!=='drill'&&MODE!=='explorer'))return;
+  if(!SESSION_STARTED||PRACTICE_LOCK||(MODE!=='drill'&&MODE!=='explorer')||(MODE==='explorer'&&STUDY_PHASE==='middlegame'))return;
   FLIPPED=SESSION_COLOR==='black';
   const{turn}=parseFen(FEN),userTurn=SESSION_COLOR==='white'?'w':'b';
   if(turn===userTurn){
@@ -405,7 +464,7 @@ function sfBestMove(fen,skill,cb){
   const fallback=()=>setTimeout(()=>cb(localBestMove(fen,skill)),180);
   if(!SF||SF_FAILED){fallback();return;}
   SF_CB=(move,info)=>cb(move||localBestMove(fen,skill),info);
-  const mt=skill<=2?400:skill<=8?800:1300;
+  const mt=skill<=4?650:skill<=10?1100:skill<=16?1700:2600;
   try{
     SF.postMessage('setoption name Skill Level value '+skill);
     SF.postMessage('position fen '+fen);
@@ -422,7 +481,8 @@ function sfBestMove(fen,skill,cb){
 
 function setBotSkill(s,lbl){
   BOT_SKILL=s;BOT_LABEL=lbl;
-  ['sk0','sk1','sk2'].forEach((id,i)=>document.getElementById(id).classList.toggle('on',i===['Beginner','Club','Strong'].indexOf(lbl)));
+  const labels=['1400','1600','1800','Full'];
+  ['sk0','sk1','sk2','sk3'].forEach((id,i)=>document.getElementById(id)?.classList.toggle('on',i===labels.indexOf(lbl)));
 }
 function setBotColor(c){
   BOT_COLOR=c;
@@ -505,42 +565,54 @@ function endBot(){
 }
 
 function sfAnalyzePosition(fen,cb){
-  // Review never substitutes the lightweight fallback evaluator for Stockfish.
-  // If the real engine is unavailable, return null so the UI does not display
-  // fake precision such as +0.03.
+  // Review uses a real fixed-depth search. A short movetime search on mobile
+  // produced unstable opening scores and fake-looking precision in V2.3.
   if(!SF||SF_FAILED){cb(null);return;}
-  SF_LAST_INFO=null;
-  SF_CB=(move,info)=>cb({best:move,info});
   try{
+    SF.postMessage('stop');
     SF.postMessage('setoption name Skill Level value 20');
+    SF.postMessage('isready');
+    SF_LAST_INFO=null;
+    SF_CB=(move,info)=>cb({best:move,info});
     SF.postMessage('position fen '+fen);
-    SF.postMessage('go movetime 220');
+    SF.postMessage('go depth 14');
     clearTimeout(SF_TIMER);
     SF_TIMER=setTimeout(()=>{
-      if(SF_CB){SF_CB=null;SF_LAST_INFO=null;cb(null);}
-    },2400);
+      if(SF_CB){const done=SF_CB;SF_CB=null;SF_LAST_INFO=null;try{SF.postMessage('stop');}catch(e){}done(null);}
+    },12000);
   }catch(e){SF_FAILED=true;SF=null;SF_CB=null;cb(null);}
 }
 
 function infoWhiteEval(fen,info){
   if(!info)return null;
-  let v;
-  if(info.type==='mate')v=(info.value>0?99:-99);
-  else v=info.value/100;
-  return parseFen(fen).turn==='w'?v:-v;
+  const stm=parseFen(fen).turn;
+  if(info.type==='mate'){
+    const whiteMate=stm==='w'?info.value:-info.value;
+    return{kind:'mate',value:whiteMate};
+  }
+  const cp=stm==='w'?info.value:-info.value;
+  return{kind:'cp',value:cp/100};
 }
-
-function reviewGrade(loss){
-  if(loss==null)return{label:'Not analyzed',cls:'rn'};
-  if(loss<=.12)return{label:'Excellent',cls:'rg'};
-  if(loss<=.35)return{label:'Good',cls:'rg'};
-  if(loss<=.80)return{label:'Inaccuracy',cls:'rn'};
-  if(loss<=1.80)return{label:'Mistake',cls:'rb'};
+function evalText(ev){
+  if(!ev)return'';
+  if(ev.kind==='mate')return(ev.value>0?'M':'-M')+Math.abs(ev.value);
+  return(ev.value>=0?'+':'')+ev.value.toFixed(2);
+}
+function whiteWinProb(ev){
+  if(!ev)return null;
+  if(ev.kind==='mate')return ev.value>0?1:0;
+  return 1/(1+Math.exp(-0.75*ev.value));
+}
+function reviewGrade(probLoss){
+  if(probLoss==null)return{label:'Not analyzed',cls:'rn'};
+  if(probLoss<=.015)return{label:'Excellent',cls:'rg'};
+  if(probLoss<=.04)return{label:'Good',cls:'rg'};
+  if(probLoss<=.09)return{label:'Inaccuracy',cls:'rn'};
+  if(probLoss<=.18)return{label:'Mistake',cls:'rb'};
   return{label:'Blunder',cls:'rb'};
 }
-
 function pieceName(p){return({P:'pawn',N:'knight',B:'bishop',R:'rook',Q:'queen',K:'king'})[p?.toUpperCase()]||'piece';}
-function reviewExplanation(entry,beforeFen,afterFen,bestSan,loss,engineOK){
+function reviewExplanation(entry,beforeFen,afterFen,bestSan,probLoss,engineOK){
   const {bd,turn}=parseFen(beforeFen);
   const ff=entry.uci.charCodeAt(0)-97,fr=+entry.uci[1]-1,tf=entry.uci.charCodeAt(2)-97,tr=+entry.uci[3]-1;
   const pc=GP(bd,fr,ff),cap=GP(bd,tr,tf);
@@ -560,7 +632,7 @@ function reviewExplanation(entry,beforeFen,afterFen,bestSan,loss,engineOK){
   if(inCheck(afterFen,parseFen(afterFen).turn))parts.push('It also gives check, forcing an immediate response.');
   if(engineOK&&bestSan){
     if(bestSan===entry.san)parts.push('Stockfish also chose this as its first move.');
-    else if(loss!=null&&loss>.12)parts.push('Stockfish preferred '+bestSan+'; the move cost about '+loss.toFixed(2)+' pawns of evaluation at the review search depth.');
+    else if(probLoss!=null&&probLoss>.015)parts.push('Stockfish preferred '+bestSan+'. The played move reduced the mover’s estimated winning chances by about '+Math.round(probLoss*100)+' percentage points at depth 14.');
     else parts.push('Stockfish slightly preferred '+bestSan+', but the evaluation difference was small.');
   }else if(!engineOK){
     parts.push('No numeric engine claim is shown because Stockfish review was unavailable in this browser session.');
@@ -588,7 +660,7 @@ function renderReviewList(){
     const owner=e.byBot?'Bot':'You';
     let grade=r.grade|| (DB[e.fen]?.moves?.[e.san]?'Repertoire':'Analyzing…');
     let cls=r.cls||'rn';
-    const evalTxt=r.evalAfter==null?'':(' · '+(r.evalAfter>=0?'+':'')+r.evalAfter.toFixed(2));
+    const evalTxt=r.evalAfter==null?'':(' · '+evalText(r.evalAfter));
     div.innerHTML='<span class="rm">'+reviewMoveLabel(i)+'</span> <span class="reviewowner">'+owner+'</span> <span class="'+cls+'">'+grade+'</span><span class="rn">'+evalTxt+'</span>';
     div.onclick=()=>reviewGo(i+1);
     el.appendChild(div);
@@ -603,7 +675,7 @@ function renderReviewDetail(){
   if(REVIEW_INDEX===0){pos.textContent='Starting position';detail.textContent='Use Next or tap a move to step through the game.';return;}
   const i=REVIEW_INDEX-1,e=BOT_LOG[i],r=REVIEW_RESULTS[i]||{};
   pos.textContent=reviewMoveLabel(i)+' · '+(e.byBot?'Bot':'You');
-  detail.innerHTML='<strong>'+(r.grade||'Analysis pending')+'</strong>'+(r.bestSan&&r.bestSan!==e.san?' · Best: '+r.bestSan:'')+(r.evalAfter!=null?' · Eval: '+(r.evalAfter>=0?'+':'')+r.evalAfter.toFixed(2):'')+'<div class="reviewexplain">'+(r.explanation||'Analysis is still running…')+'</div>';
+  detail.innerHTML='<strong>'+(r.grade||'Analysis pending')+'</strong>'+(r.bestSan&&r.bestSan!==e.san?' · Best: '+r.bestSan:'')+(r.evalAfter!=null?' · Eval: '+evalText(r.evalAfter):'')+'<div class="reviewexplain">'+(r.explanation||'Analysis is still running…')+'</div>';
 }
 
 function reviewGo(idx){
@@ -635,11 +707,13 @@ function analyzeReview(){
         const before=posResults[i],after=posResults[i+1];
         const mover=parseFen(e.fen).turn;
         const eb=before?.eval,ea=after?.eval;
-        const loss=(eb==null||ea==null)?null:Math.max(0,mover==='w'?eb-ea:ea-eb);
-        const g=reviewGrade(loss);
+        const pb=whiteWinProb(eb),pa=whiteWinProb(ea);
+        const probLoss=(pb==null||pa==null)?null:Math.max(0,mover==='w'?pb-pa:pa-pb);
+        const g=reviewGrade(probLoss);
         const bestSan=before?.best?uci2san(e.fen,before.best):'';
         const inBook=!!DB[e.fen]?.moves?.[e.san];
-        return{grade:inBook?'Repertoire':g.label,cls:inBook?'rg':g.cls,evalAfter:ea,bestSan,loss,explanation:reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,loss,true)};
+        const tag=inBook?' · Repertoire':'';
+        return{grade:g.label+tag,cls:g.cls,evalAfter:ea,bestSan,probLoss,explanation:reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,probLoss,true)};
       });
       if(eng)eng.textContent='Stockfish complete';renderReviewList();renderReviewDetail();return;
     }
@@ -712,7 +786,7 @@ function doFlip(){FLIPPED=!FLIPPED;drawBoard();}
 
 // ─── MODE SWITCHING ───────────────────────────────────────────────────────────
 function setMode(mode){
-  MODE=mode;BOT_ACTIVE=false;SEL=null;LDOTS=[];SESSION_STARTED=false;PRACTICE_LOCK=false;
+  MODE=mode;BOT_ACTIVE=false;SEL=null;LDOTS=[];SESSION_STARTED=false;PRACTICE_LOCK=false;STUDY_PHASE='opening';STUDY_PLAN=null;
   document.querySelectorAll('.nb').forEach((b,i)=>b.classList.toggle('on',['drill','explorer','bot'][i]===mode));
   show('linecard',mode==='drill'||mode==='explorer');
   show('expcard',mode==='explorer');
@@ -733,7 +807,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.3 loaded: mobile coaching + family quick-select + line completion + engine-backed review');
+console.info('ChessTool V2.4 loaded: depth-14 review + stronger bot + opening-to-middlegame Study Lab');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
