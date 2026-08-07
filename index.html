@@ -86,7 +86,7 @@ nav{display:flex;gap:5px;flex-wrap:wrap}
 </head>
 <body>
 <header>
-  <div class="logo">♟ ChessTool <small>English · Caro-Kann · Plans</small></div>
+  <div class="logo">♟ ChessTool <small>English · Caro-Kann · Plans · V1.1</small></div>
   <nav>
     <button class="nb on"  onclick="setMode('drill')">Drill</button>
     <button class="nb"     onclick="setMode('explorer')">Explorer</button>
@@ -687,9 +687,21 @@ function drawCoords(){
 
 // ─── CLICK HANDLING ──────────────────────────────────────────────────────────
 function onSqClick(rank,file){
-  if(MODE==='quiz')return;
+  if(MODE==='quiz'||MODE==='plans')return;
   if(MODE==='bot'){botClick(rank,file);return;}
   const{bd,turn}=parseFen(FEN);
+
+  // In Drill, the user's color is fixed. If it is the repertoire/opponent's
+  // turn, ignore board taps and let drillAutoReply make that move.
+  if(MODE==='drill'){
+    const userTurn=DRILL_COLOR==='white'?'w':'b';
+    FLIPPED=(DRILL_COLOR==='black');
+    if(turn!==userTurn){
+      SEL=null;LDOTS=[];drawBoard();
+      return;
+    }
+  }
+
   const p=GP(bd,rank,file);
 
   if(SEL){
@@ -728,6 +740,9 @@ function execMove(san,nextFen){
   setLastMove(san);
   FEN=nextFen;HIST.push(nextFen);SANS.push(san);
   SEL=null;LDOTS=[];
+  // Drill orientation is fixed to the side being trained.
+  // A move must never change the player's viewing side.
+  if(MODE==='drill') FLIPPED=(DRILL_COLOR==='black');
   refreshPanel();drawBoard();drawMoveList();
 
   if(MODE==='drill'){
@@ -741,6 +756,8 @@ function execMove(san,nextFen){
 
 // ─── DRILL ───────────────────────────────────────────────────────────────────
 function drillAutoReply(){
+  // Lock orientation before and after every automatic repertoire reply.
+  FLIPPED=(DRILL_COLOR==='black');
   const{turn}=parseFen(FEN);
   const dt=DRILL_COLOR==='white'?'w':'b';
   if(turn===dt){setStat('Your turn — find the next move.','info');return;}
@@ -749,6 +766,7 @@ function drillAutoReply(){
   const[san,nextFen]=Object.entries(node.moves)[0];
   setLastMove(san);
   FEN=nextFen;HIST.push(nextFen);SANS.push(san);
+  FLIPPED=(DRILL_COLOR==='black');
   refreshPanel();drawBoard();drawMoveList();
   const nn=DB[FEN];
   if(!nn||!Object.keys(nn.moves).length)setStat('🏁 End of line! Reset or try Random Line.','info');
@@ -1052,6 +1070,8 @@ function fullReset(){
 
 function doReset(){
   fullReset();
+  if(MODE==='drill') FLIPPED=(DRILL_COLOR==='black');
+  drawBoard();
   if(MODE==='drill'&&DRILL_COLOR==='black'){setTimeout(()=>drillAutoReply(),300);}
   if(MODE==='explorer'){renderTree();}
   setStat('Reset.','info');
