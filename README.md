@@ -1,4 +1,4 @@
-# ChessTool V2.2
+# ChessTool V2.3
 
 Personal English Opening / Caro-Kann repertoire trainer.
 
@@ -17,7 +17,7 @@ Personal English Opening / Caro-Kann repertoire trainer.
 - `data/repertoire.js` — English and Caro-Kann repertoire lines
 - `data/plans.js` — middlegame-plan knowledge
 
-## V2.2 changes
+## V2.3 changes
 
 - Removed separate Quiz and Plans navigation; plan teaching is folded into Study.
 - Train and Study now both autoplay the opponent.
@@ -27,3 +27,14 @@ Personal English Opening / Caro-Kann repertoire trainer.
 - Rebuilt the English vs `1...e5` main branch as a coherent Four Knights line.
 - Expanded selected drill definitions to use their full stored continuations.
 - Game Review no longer labels every post-opening player move simply “Out of book”; it provides a local-search grade, evaluation, and suggested local-best move when appropriate.
+
+
+## V2.3 changes
+- Correct chessboard light/dark square parity in both orientations.
+- One-tap English-only, Caro-Kann-only, or All repertoire selection.
+- Mobile live coaching strip directly under the board; important feedback persists through the opponent reply.
+- Study sessions now stop at the actual end of the selected repertoire branch.
+- Game Review no longer uses the old material heuristic for fake decimal evaluations. Numeric scores are shown only when Stockfish analysis is available.
+- Interactive review navigation: click moves or use Previous/Next to put that position on the main board.
+- Review move ownership/numbering is derived from each move's FEN, so White/Black labels stay correct.
+- Move explanations combine repertoire notes, tactical/material context, move purpose, Stockfish preference, and evaluation loss.

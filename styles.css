@@ -91,3 +91,44 @@ nav{display:flex;gap:5px;flex-wrap:wrap}
 .studywhy{margin-top:10px;padding:9px 10px;border-left:3px solid var(--acc);background:var(--mbg);font-size:.8rem;line-height:1.5;color:var(--txt)}
 .reviewwhy{margin-top:4px;color:var(--muted);font-size:.76rem;line-height:1.45;padding-left:4px}
 .reviewfoot{margin-top:10px;padding-top:8px;border-top:1px solid var(--bdr);color:var(--muted);font-size:.72rem;line-height:1.45}
+
+/* V2.3 mobile-first coaching + quick repertoire filters + interactive review */
+.playhud{background:var(--surf);border:1px solid var(--bdr);border-radius:6px;padding:9px 11px;line-height:1.4}
+.playhudtop{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:4px}
+#hudopening{font-family:'Playfair Display',serif;color:var(--acc);font-size:.88rem}
+#hudeco{font-family:'JetBrains Mono',monospace;color:var(--muted);font-size:.66rem}
+#hudmsg{font-size:.78rem;color:var(--txt);line-height:1.45}
+.familyquick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:9px}
+.familyquick .skb{font-size:.72rem;padding:7px 5px}
+.reviewnav{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:7px;margin-bottom:9px}
+#reviewpos{text-align:center;font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--acc)}
+.reviewdetail{background:var(--mbg);border:1px solid var(--bdr);border-radius:5px;padding:10px;margin-bottom:9px;font-size:.8rem;line-height:1.5}
+.reviewdetail strong{color:var(--acc)}
+.reviewexplain{margin-top:5px;color:var(--txt)}
+#revlist{max-height:330px;display:flex;flex-direction:column;gap:3px}
+.reviewrow{width:100%;text-align:left;background:transparent;color:var(--txt);border:1px solid transparent;border-bottom-color:var(--bdr);padding:7px 5px;cursor:pointer;font:inherit;border-radius:4px}
+.reviewrow:hover,.reviewrow.active{background:var(--mbg);border-color:var(--acc2)}
+.reviewowner{display:inline-block;min-width:30px;margin:0 6px;color:var(--muted);font-size:.7rem;text-transform:uppercase}
+#reviewengine{font-size:.64rem;color:var(--acc);text-transform:none;letter-spacing:0}
+
+@media(max-width:800px){
+  body{padding-bottom:14px}
+  header{position:sticky;top:0;z-index:20}
+  .logo{font-size:1.05rem}.logo small{display:none}
+  nav{width:100%;display:grid;grid-template-columns:repeat(3,1fr)}
+  .nb{padding:7px 5px;font-size:.7rem}
+  .app{gap:8px;padding-top:7px}
+  .bcol{gap:7px}
+  .playhud{position:sticky;top:78px;z-index:14;box-shadow:0 5px 14px rgba(0,0,0,.25);padding:8px 10px}
+  #hudmsg{font-size:.76rem;max-height:4.35em;overflow-y:auto}
+  .bctrl{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+  .bctrl .cb{padding:7px 4px;font-size:.68rem;overflow:hidden;text-overflow:ellipsis}
+  .panel{gap:8px}
+  /* Opening + status are duplicated in the live HUD above, so hide them on phone. */
+  .panel>.card:nth-child(1),.panel>.card:nth-child(2){display:none}
+  .cb2{padding:10px 11px}.ch{padding:8px 11px}
+  #mvlist{max-height:105px}
+  #revlist{max-height:45vh}
+  .reviewnav .cb{padding:7px 8px;font-size:.7rem}
+  .familyquick{position:sticky;top:0;background:var(--surf);z-index:2;padding-bottom:4px}
+}
