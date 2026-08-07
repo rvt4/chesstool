@@ -1,26 +1,34 @@
 // ════ ENGLISH OPENING LINES ══════════════════════════════════════════════════
 
-// Line 1: Botvinnik vs 1...e5, Two Knights
+// Line 1: King's English Four Knights — main line vs 1...e5
+// V2.2 replaces the old pseudo-Botvinnik line. The old continuation mixed
+// structures and could jump branches after transpositions. This is a coherent
+// Four Knights repertoire with the critical ...e4 / Ng5 structure.
 registerLine(
-  ['c4','e5','Nc3','Nf6','g3','d5','cxd5','Nxd5','Bg2','Nb6','Nf3','Nc6','O-O','Be7','d3','O-O','Nd5','Nxd5'],
-  [A('English Opening','A10','<strong>1.c4</strong> — The English. Control d5 without occupying it. A hypermodern system that leads to rich strategic play.'),
-   A('English: King\'s English','A20','<strong>1…e5</strong> — The reversed Sicilian. White has an extra tempo compared to Black in a normal Sicilian.'),
-   A('English: King\'s English','A25','<strong>2.Nc3</strong> — Developing toward d5. White plans g3-Bg2 and long-term pressure.'),
-   A('English: Two Knights','A22','<strong>2…Nf6</strong> — Symmetrical development. White starts the Botvinnik fianchetto plan.'),
-   A('English: Botvinnik','A22','<strong>3.g3</strong> — Beginning the fianchetto. The Bg2 will dominate the long diagonal for the whole game.'),
-   A('English: Classical','A22','<strong>3…d5</strong> — Black strikes the center. White trades to create an imbalance.'),
-   A('English: Classical Exchange','A22','<strong>4.cxd5</strong> — Opening the c-file and reducing central tension.'),
-   A('English: Botvinnik','A22','<strong>4…Nxd5</strong> — Black recaptures. Now <strong>5.Bg2</strong> — the cornerstone move, activating the long diagonal.'),
-   A('English: Botvinnik — Bg2','A22','<strong>5.Bg2</strong> — The fianchetto is complete! This bishop eyes d5 and will dominate the game. Black must find active counterplay.'),
-   A('English: Botvinnik','A22','<strong>5…Nb6</strong> — The knight retreats safely. White develops with Nf3 and plans O-O, d3, Nd5.'),
-   A('English: Botvinnik','A22','<strong>6.Nf3</strong> — Development. White will castle and then manoeuvre Nd5.'),
-   N,
-   A('English: Botvinnik','A22','<strong>7.O-O</strong> — King to safety. Plan: d3, Nd5 — the dream outpost.'),
-   N,
-   A('English: Botvinnik','A22','<strong>8.d3</strong> — Solid centre. White prepares Nd5.'),
-   N,
-   A('English: Botvinnik — Nd5!','A22','<strong>9.Nd5!</strong> — The ideal outpost. Black must exchange, but White recaptures with the e-pawn, creating a strong passed pawn.'),
-  ]
+  ['c4','e5','Nc3','Nf6','Nf3','Nc6','g3','Bb4','Bg2','O-O','O-O','e4','Ng5','Bxc3','bxc3','Re8','f3','exf3','Nxf3','d6','d3','h6','e4'],
+  [A('English Opening','A10','<strong>1.c4</strong> — Control d5 from the flank and keep the center flexible.'),
+   A('King\'s English','A20','<strong>1…e5</strong> — The Reversed Sicilian. Develop quickly and use the extra tempo rather than forcing an early pawn break.'),
+   A('King\'s English','A25','<strong>2.Nc3</strong> — Develop toward d5 and keep g3/Bg2 available.'),
+   A('English: Four Knights','A28','<strong>2…Nf6</strong> — Black develops naturally. We answer with Nf3 and head for the Four Knights.'),
+   A('English: Four Knights','A28','<strong>3.Nf3</strong> — Develop before committing the center. This also discourages an easy ...e4.'),
+   A('English: Four Knights','A28','<strong>3…Nc6</strong> — The Four Knights position. Now g3 prepares the long diagonal.'),
+   A('English: Four Knights','A28','<strong>4.g3</strong> — Fianchetto. The bishop on g2 will pressure the center and queenside.'),
+   A('English: Four Knights','A28','<strong>4…Bb4</strong> — The main pin. Don’t chase the bishop; finish development with Bg2 and O-O.'),
+   A('English: Four Knights','A28','<strong>5.Bg2</strong> — Complete the fianchetto and prepare to castle.'),
+   A('English: Four Knights','A28','<strong>5…O-O</strong> — Black gets the king safe before changing the center.'),
+   A('English: Four Knights','A28','<strong>6.O-O</strong> — Castle first. Black’s thematic ...e4 now gains space but gives us targets.'),
+   A('English: Four Knights','A28','<strong>6…e4</strong> — The critical advance. The knight goes to g5, hitting e4 and creating tactical pressure.'),
+   A('English: Four Knights — Ng5','A28','<strong>7.Ng5!</strong> — The thematic response. Pressure e4 and force Black to clarify the pin.'),
+   A('English: Four Knights','A28','<strong>7…Bxc3</strong> — Black gives up the bishop pair to damage the queenside pawns.'),
+   A('English: Four Knights','A28','<strong>8.bxc3</strong> — Accept the doubled pawns. In return we get the bishop pair, the b-file, and central control.'),
+   A('English: Four Knights','A28','<strong>8…Re8</strong> — Black reinforces e4. We undermine it with f3.'),
+   A('English: Four Knights — f3 break','A28','<strong>9.f3!</strong> — The key break. Challenge Black’s advanced e4 pawn before it cramps us.'),
+   A('English: Four Knights','A28','<strong>9…exf3</strong> — Black releases the tension.'),
+   A('English: Four Knights','A28','<strong>10.Nxf3</strong> — Recapture with development. The position becomes a strategic middlegame with bishop-pair chances.'),
+   A('English: Four Knights','A28','<strong>10…d6</strong> — Black stabilizes the center. Our next priorities are d3, e4 ideas, and activating the bishops.'),
+   A('English: Four Knights','A28','<strong>11.d3</strong> — Finish the center and prepare e4 or Bf4 depending on Black’s setup.'),
+   A('English: Four Knights','A28','<strong>11…h6</strong> — Black asks the g5 knight where it belongs.'),
+   A('English: Four Knights','A28','<strong>12.e4</strong> — Build the center now that Black’s advanced e-pawn has been exchanged. The bishop pair and central space become our long-term assets.')]
 );
 
 // Line 2: Botvinnik vs 1...Nc6 (Closed)
@@ -253,22 +261,24 @@ registerLine(
 
 // ─── DRILL LINE DEFINITIONS ──────────────────────────────────────────────────
 const DLINES=[
-  {id:'e-bot',  label:'English: Botvinnik vs 1…e5',     group:'English (White)', color:'white', sans:['c4','e5','Nc3','Nf6','g3','d5','cxd5','Nxd5','Bg2','Nb6','Nf3']},
-  {id:'e-cls2', label:'English: Botvinnik vs 1…Nc6',    group:'English (White)', color:'white', sans:['c4','e5','Nc3','Nc6','g3','g6','Bg2','Bg7','d3','d6','e4']},
-  {id:'e-sym',  label:'English: Symmetrical / Maroczy', group:'English (White)', color:'white', sans:['c4','c5','Nf3','Nf6','Nc3','Nc6','d4','cxd4','Nxd4','g6','e4']},
-  {id:'e-hedge',label:'English: Hedgehog',               group:'English (White)', color:'white', sans:['c4','c5','Nf3','e6','Nc3','a6','g3','b5','cxb5','axb5','Bg2']},
-  {id:'e-grun', label:'English: Anglo-Grünfeld',         group:'English (White)', color:'white', sans:['c4','Nf6','Nc3','d5','cxd5','Nxd5','g3','g6','Bg2','Bg7','Nf3']},
-  {id:'ck-cls', label:'Caro-Kann: Classical Karpov',     group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','Nc3','dxe4','Nxe4','Bf5','Ng3','Bg6','h4','h6','Nf3','Nd7']},
-  {id:'ck-adv', label:'Caro-Kann: Advance (Short)',      group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','e5','Bf5','Nf3','e6','Be2','Nd7','O-O','Ne7']},
-  {id:'ck-tal', label:'Caro-Kann: Advance (Tal h4)',     group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','e5','Bf5','h4','h5','Bd3','Bxd3','Qxd3']},
-  {id:'ck-panov',label:'Caro-Kann: Panov Attack',        group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','exd5','cxd5','c4','Nf6','Nc3','e6','Nf3','Bb4']},
-  {id:'ck-2k',  label:'Caro-Kann: Two Knights Bg4',      group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','Nc3','d5','Nf3','Bg4','h3','Bxf3','Qxf3']},
-  {id:'e-e6',   label:'English: vs ...e6 / QGD setup',    group:'English (White)', color:'white', sans:['c4','e6','Nc3','d5','d4','Nf6','Nf3','Be7','Bg5']},
-  {id:'e-c6',   label:'English: vs ...c6',                group:'English (White)', color:'white', sans:['c4','c6','Nf3','d5','g3','Nf6','Bg2','g6','O-O']},
-  {id:'e-dutch',label:'English: vs ...f5 Dutch setup',     group:'English (White)', color:'white', sans:['c4','f5','Nc3','Nf6','g3','g6','Bg2','Bg7','d3','O-O','e4']},
-  {id:'e-b6',   label:'English: vs ...b6',                 group:'English (White)', color:'white', sans:['c4','b6','Nc3','Bb7','e4','e6','Nf3']},
-  {id:'ck-ex',  label:'Caro-Kann: Exchange',               group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','exd5','cxd5','Bd3','Nc6','c3','Qc7']},
-  {id:'ck-fan', label:'Caro-Kann: Fantasy',                group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','f3','dxe4','fxe4','e5']},
-  {id:'ck-hill',label:'Caro-Kann: Hillbilly',              group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','Bc4','d5','exd5','cxd5','Bb5+','Nc6']},
-  {id:'ck-d3',  label:'Caro-Kann: Quiet 2.d3',             group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d3','d5','Nd2','e5']},
+  {id:'e-e5-4n',label:'English: Four Knights vs 1…e5',       group:'English (White)', color:'white', sans:['c4','e5','Nc3','Nf6','Nf3','Nc6','g3','Bb4','Bg2','O-O','O-O','e4','Ng5','Bxc3','bxc3','Re8','f3','exf3','Nxf3','d6','d3','h6','e4']},
+  {id:'e-e5-cl',label:'English: Closed / Botvinnik setup',   group:'English (White)', color:'white', sans:['c4','e5','Nc3','Nc6','g3','g6','Bg2','Bg7','d3','d6','e4','Nge7','Nge2','O-O','O-O','Be6','Nd5','f5']},
+  {id:'e-sym',  label:'English: Symmetrical / Maroczy',      group:'English (White)', color:'white', sans:['c4','c5','Nf3','Nf6','Nc3','Nc6','d4','cxd4','Nxd4','g6','e4','Bg7','Be2','O-O','O-O','d6','Be3','Bd7','Qd2','Nxd4','Bxd4','Bc6','f3','a5','b3']},
+  {id:'e-hedge',label:'English: Hedgehog',                    group:'English (White)', color:'white', sans:['c4','c5','Nf3','e6','Nc3','a6','g3','b5','cxb5','axb5','Bg2','Bb7','O-O','Nf6','b3','d6','Bb2','Nbd7','d4','cxd4','Nxd4','Qb6']},
+  {id:'e-grun', label:'English: Anglo-Grünfeld',              group:'English (White)', color:'white', sans:['c4','Nf6','Nc3','d5','cxd5','Nxd5','g3','g6','Bg2','Bg7','Nf3','O-O','O-O','Nc6','Nxd5','Qxd5','d3','Qd6','Be3','Rd8','Qa4','a6','Rfd1']},
+  {id:'e-kid',  label:'English: King’s Indian setup',         group:'English (White)', color:'white', sans:['c4','Nf6','Nc3','g6','g3','Bg7','Bg2','O-O','Nf3','d6','O-O','Nc6','d4','Nxd4','Nxd4']},
+  {id:'e-e6',   label:'English: vs ...e6 / QGD setup',        group:'English (White)', color:'white', sans:['c4','e6','Nc3','d5','d4','Nf6','Nf3','Be7','Bg5','O-O','e3','Nbd7','Rc1','c6','Bd3','dxc4','Bxc4']},
+  {id:'e-c6',   label:'English: vs ...c6',                    group:'English (White)', color:'white', sans:['c4','c6','Nf3','d5','g3','Nf6','Bg2','g6','O-O','Bg7','d4','O-O','Nc3','dxc4','a4','Na6','e4']},
+  {id:'e-dutch',label:'English: vs ...f5 Dutch setup',        group:'English (White)', color:'white', sans:['c4','f5','Nc3','Nf6','g3','g6','Bg2','Bg7','d3','O-O','e4','d6','Nge2','e5','O-O','Nc6']},
+  {id:'e-b6',   label:'English: vs ...b6',                    group:'English (White)', color:'white', sans:['c4','b6','Nc3','Bb7','e4','e6','Nf3','Bb4','d3','f5','exf5','exf5','Be2','Nf6','O-O','O-O']},
+  {id:'ck-cls', label:'Caro-Kann: Classical Karpov',          group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','Nc3','dxe4','Nxe4','Bf5','Ng3','Bg6','h4','h6','Nf3','Nd7','h5','Bh7','Bd3','Bxd3','Qxd3','e6','Bd2','Ngf6','O-O-O','Be7','Ne4','Nxe4','Qxe4','Nf6','Qh4','O-O','Ne5','Nd7','Nxd7','Qxd7','Qe4']},
+  {id:'ck-cls2',label:'Caro-Kann: Classical early Nf3',       group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','Nc3','dxe4','Nxe4','Bf5','Nf3','Nd7','Ng3','Bg6','h4','h6','Bd3','Bxd3','Qxd3','e6','Bd2','Ngf6','O-O-O','Be7','Kb1']},
+  {id:'ck-adv', label:'Caro-Kann: Advance (Short)',           group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','e5','Bf5','Nf3','e6','Be2','Nd7','O-O','Ne7','Nbd2','h6','Nb3','g5','Nfd2','Bg6','c3','c5','dxc5']},
+  {id:'ck-tal', label:'Caro-Kann: Advance (Tal h4)',          group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','e5','Bf5','h4','h5','Bd3','Bxd3','Qxd3','e6','Bg5','Qb6','Nd2','Qa6','Qf3','c5','Ne2','Nc6','c3']},
+  {id:'ck-panov',label:'Caro-Kann: Panov Attack',             group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','exd5','cxd5','c4','Nf6','Nc3','e6','Nf3','Bb4','Bd3','dxc4','Bxc4','O-O','O-O','Nc6','a3','Ba5','Bg5']},
+  {id:'ck-ex',  label:'Caro-Kann: Exchange',                  group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','exd5','cxd5','Bd3','Nc6','c3','Qc7','Ne2','Bg4','f3','Bd7','O-O','e6','Nd2','Nf6']},
+  {id:'ck-2k',  label:'Caro-Kann: Two Knights Bg4',           group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','Nc3','d5','Nf3','Bg4','h3','Bxf3','Qxf3','e6','d4','Nf6','Bd3','Bb4','O-O','O-O','a3','Bxc3','bxc3','Nbd7','Re1','c5']},
+  {id:'ck-fan', label:'Caro-Kann: Fantasy',                   group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','f3','dxe4','fxe4','e5','Nf3','exd4','Bc4','Nf6','O-O','Be7','e5','Nd5']},
+  {id:'ck-hill',label:'Caro-Kann: Hillbilly',                 group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','Bc4','d5','exd5','cxd5','Bb5+','Nc6','d4','Nf6','Nf3','Bf5','O-O','e6']},
+  {id:'ck-d3',  label:'Caro-Kann: Quiet 2.d3',                group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d3','d5','Nd2','e5','Ngf3','Bd6','g3','Nf6','Bg2','O-O','O-O','Re8']},
 ];
