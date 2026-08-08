@@ -382,7 +382,7 @@ function studyPlanBotReply(){
   const userTurn=SESSION_COLOR==='white'?'w':'b';
   if(parseFen(FEN).turn===userTurn){prepareMiddlegameTurn();return;}
   PRACTICE_LOCK=true;
-  sfBestMoveRated(FEN,MID_RATING,uci=>{
+  chooseRatedMoveWithTactics(FEN,MID_RATING,(uci,meta)=>{
     PRACTICE_LOCK=false;
     if(!SESSION_STARTED||STUDY_PHASE!=='middlegame')return;
     if(!uci){finishPracticeLine(true);return;}
@@ -604,11 +604,12 @@ function sfBestMove(fen,skill,cb){
   }
 }
 
+function ratingToSkill(rating){return rating<=1400?4:rating<=1600?8:rating<=1800?12:16;}
 function sfBestMoveRated(fen,rating,cb){
-  const fallback=()=>setTimeout(()=>cb(localBestMove(fen,midSkillLevel())),180);
+  const fallback=()=>setTimeout(()=>cb(localBestMove(fen,ratingToSkill(rating))),180);
   if(!SF||SF_FAILED){fallback();return;}
   SF_CB=(move,info)=>{
-    const safe=isLegalEngineMove(fen,move)?move:localBestMove(fen,midSkillLevel());
+    const safe=isLegalEngineMove(fen,move)?move:localBestMove(fen,ratingToSkill(rating));
     cb(safe,info);
   };
   const mt=rating<=1400?650:rating<=1600?900:rating<=1800?1200:1550;
@@ -619,9 +620,62 @@ function sfBestMoveRated(fen,rating,cb){
     SF.postMessage('go movetime '+mt);
     clearTimeout(SF_TIMER);
     SF_TIMER=setTimeout(()=>{
-      if(SF_CB){const done=SF_CB;SF_CB=null;done(localBestMove(fen,midSkillLevel()),null);}
+      if(SF_CB){const done=SF_CB;SF_CB=null;done(localBestMove(fen,ratingToSkill(rating)),null);}
     },mt+1900);
   }catch(e){SF_FAILED=true;SF=null;SF_CB=null;fallback();}
+}
+
+
+function moveIsTactical(fen,uci){
+  if(!isLegalEngineMove(fen,uci))return false;
+  const {bd}=parseFen(fen);
+  const tf=uci.charCodeAt(2)-97,tr=+uci[3]-1;
+  const capture=!!GP(bd,tr,tf);
+  const promotion=uci.length>4;
+  const nf=applyUci(fen,uci);
+  const givesCheck=inCheck(nf,parseFen(nf).turn);
+  return capture||promotion||givesCheck;
+}
+function mateOverrideLimit(rating){
+  if(rating<=1400)return 5;
+  if(rating<=1600)return 7;
+  if(rating<=1800)return 10;
+  return 14;
+}
+function tacticOverrideCp(rating){
+  if(rating<=1400)return 700;
+  if(rating<=1600)return 550;
+  if(rating<=1800)return 400;
+  return 300;
+}
+function chooseRatedMoveWithTactics(fen,rating,cb,fullStrength=false){
+  if(fullStrength){
+    sfAnalyzePositionDepth(fen,13,res=>{
+      if(res&&isLegalEngineMove(fen,res.best))cb(res.best,{override:'full',info:res.info});
+      else sfBestMove(fen,20,(m,info)=>cb(m,{override:'full-fallback',info}));
+    });
+    return;
+  }
+  // Quick full-strength scan first. Rating still controls normal play, but
+  // short mates and obvious forcing wins are converted much more reliably.
+  sfAnalyzePositionDepth(fen,10,res=>{
+    if(res&&isLegalEngineMove(fen,res.best)){
+      const info=res.info||{};
+      if(info.type==='mate'&&info.value>0&&Math.abs(info.value)<=mateOverrideLimit(rating)){
+        cb(res.best,{override:'mate',info});return;
+      }
+      if(info.type==='cp'&&info.value>=tacticOverrideCp(rating)&&moveIsTactical(fen,res.best)){
+        cb(res.best,{override:'tactic',info});return;
+      }
+    }
+    sfBestMoveRated(fen,rating,(m,info)=>cb(m,{override:null,info}));
+  });
+}
+function botRating(){
+  if(BOT_LABEL==='1400')return 1400;
+  if(BOT_LABEL==='1600')return 1600;
+  if(BOT_LABEL==='1800')return 1800;
+  return 2000;
 }
 
 function setBotSkill(s,lbl){
@@ -687,7 +741,7 @@ function botThink(){
   if(!BOT_ACTIVE)return;
   BOT_THINKING=true;
   setStat(BOT_LABEL+' is thinking…','info');
-  sfBestMove(FEN,BOT_SKILL,uci=>{
+  chooseRatedMoveWithTactics(FEN,botRating(),(uci,meta)=>{
     BOT_THINKING=false;
     if(!BOT_ACTIVE)return;
     if(!uci){const lm=legalMoves(FEN);if(!lm.length){endBot();return;}uci=localBestMove(FEN,BOT_SKILL);if(!uci){endBot();return;}}
@@ -700,7 +754,7 @@ function botThink(){
     refreshPanel();drawBoard();drawMoveList();
     if(!legalMoves(nf).length){endBot();return;}
     setStat('Your turn.','info');setCoach('Bot played '+san+'. Your turn.');
-  });
+  },BOT_LABEL==='Full');
 }
 
 function endBot(){
@@ -727,7 +781,7 @@ function sfAnalyzePositionDepth(fen,depth,cb,retry=0){
   const finish=res=>{
     if(finished)return;finished=true;
     clearTimeout(SF_TIMER);SF_READY_CB=null;SF_CB=null;
-    if(!res&&retry<1){setTimeout(()=>sfAnalyzePositionDepth(fen,Math.max(11,depth-1),cb,retry+1),120);return;}
+    if(!res&&retry<2){setTimeout(()=>sfAnalyzePositionDepth(fen,Math.max(11,depth-1),cb,retry+1),160);return;}
     cb(res);
   };
   try{
@@ -831,30 +885,40 @@ function classifyMove({entry,beforeFen,afterFen,bestUci,beforeEval,afterEval,pro
   const beforeP=moverWinProb(beforeEval,mover),afterP=moverWinProb(afterEval,mover);
   const bm=mateForSide(beforeEval,mover),am=mateForSide(afterEval,mover);
 
-  // Forced-mate handling. If the mover is already being mated, distinguish
-  // the engine's best resistance from moves that shorten the mate.
+  // The mover is being forcibly mated.
   if(bm<0){
-    if(am>=0)return{label:'Great',...MOVE_CLASS_META.Great}; // escaped the forced mate
+    if(am>=0)return{label:'Great',...MOVE_CLASS_META.Great}; // escaped mate
     if(best)return{label:'Forced',...MOVE_CLASS_META.Forced};
-    // Smaller absolute mate distance after the move means mate arrives sooner.
-    if(am<0&&Math.abs(am)<Math.abs(bm))return{label:'Blunder',...MOVE_CLASS_META.Blunder};
-    return{label:'Good',...MOVE_CLASS_META.Good};
+    const beforeDist=Math.abs(bm),afterDist=Math.abs(am);
+    const shortened=beforeDist-afterDist;
+    if(shortened>=4)return{label:'Blunder',...MOVE_CLASS_META.Blunder};
+    if(shortened>=2)return{label:'Mistake',...MOVE_CLASS_META.Mistake};
+    if(shortened>=1)return{label:'Inaccuracy',...MOVE_CLASS_META.Inaccuracy};
+    return{label:'Good',...MOVE_CLASS_META.Good}; // prolonged mate / similar resistance
   }
 
   const beforeMate=bm>0,afterMate=am>0;
-  // Miss: a forced mate or major winning chance was thrown away.
-  if((beforeMate&&!afterMate)||(beforeP!=null&&afterP!=null&&beforeP>=.82&&afterP<.62&&probLoss>=.16))
+
+  // The mover has a forced mate. Losing it is a Miss; making the mate much
+  // longer is graded by mate-distance deterioration rather than win probability.
+  if(beforeMate){
+    if(!afterMate)return{label:'Miss',...MOVE_CLASS_META.Miss};
+    if(best)return{label:'Great',...MOVE_CLASS_META.Great};
+    const lengthened=am-bm;
+    if(lengthened>=4)return{label:'Blunder',...MOVE_CLASS_META.Blunder};
+    if(lengthened>=2)return{label:'Mistake',...MOVE_CLASS_META.Mistake};
+    if(lengthened>=1)return{label:'Inaccuracy',...MOVE_CLASS_META.Inaccuracy};
+    return{label:'Good',...MOVE_CLASS_META.Good};
+  }
+
+  if(beforeP!=null&&afterP!=null&&beforeP>=.82&&afterP<.62&&probLoss>=.16)
     return{label:'Miss',...MOVE_CLASS_META.Miss};
 
-  // Brilliant is intentionally rare. The engine must choose it first, the move
-  // must offer real material, and Stockfish's principal variation must show the
-  // opponent actually accepting that offer.
   const pv=beforeInfo?.pv||[];
   if(best&&probLoss<=.01&&isSacrificeCandidate(entry,beforeFen,afterFen)&&pvAcceptsSacrifice(entry,beforeFen,pv))
     return{label:'Brilliant',...MOVE_CLASS_META.Brilliant};
 
-  // Great: best move that preserves or executes a forced mating sequence.
-  if(best&&(beforeMate||afterMate))return{label:'Great',...MOVE_CLASS_META.Great};
+  if(best&&afterMate)return{label:'Great',...MOVE_CLASS_META.Great};
   if(best)return{label:'Best',...MOVE_CLASS_META.Best};
   if(probLoss<=.02)return{label:'Excellent',...MOVE_CLASS_META.Excellent};
   if(probLoss<=.05)return{label:'Good',...MOVE_CLASS_META.Good};
@@ -1008,7 +1072,8 @@ function analyzeReview(){
       else posResults[idx]={best:null,eval:{kind:'cp',value:0,terminal:true,stalemate:true}};
       k++;if(eng)eng.textContent='Stockfish '+Math.round(100*k/REVIEW_FENS.length)+'%';next();return;
     }
-    sfAnalyzePositionDepth(fen,14,res=>{
+    const reviewDepth=idx<10?16:(idx<20?15:14);
+    sfAnalyzePositionDepth(fen,reviewDepth,res=>{
       posResults[idx]=res?{best:res.best,eval:infoWhiteEval(fen,res.info),info:res.info}:{best:null,eval:null,info:null};
       k++;if(eng)eng.textContent='Stockfish '+Math.round(100*k/REVIEW_FENS.length)+'%';next();
     });
@@ -1114,7 +1179,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.7 loaded: legal engine gating + strict brilliant verification + forced-mate-aware grading');
+console.info('ChessTool V2.8 loaded: tactical conversion override + deeper opening review + mate-distance grading');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
