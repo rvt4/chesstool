@@ -1,16 +1,28 @@
-# ChessTool V2.4
+# ChessTool V2.5
 
-Personal English Opening + Caro-Kann trainer.
+Personal English Opening + Caro-Kann trainer focused on opening recall and the early middlegame.
 
-## V2.4
-- Study now flows directly from the opening into a **Middlegame Lab** for roughly 10 more moves (about 20 plies).
-- Middlegame Lab keeps the strategic blueprint visible: goal, pawn breaks, piece map, opponent plan, trigger, and common mistake.
-- Bot presets: 1400 / 1600 / 1800 / Full.
-- Game Review now uses Stockfish depth 14 rather than a 220 ms search.
-- Mate evaluations display as M# / -M# rather than fake +99 scores.
-- Move grades use estimated winning-chance loss, which is more stable than raw pawn thresholds.
-- Repertoire is a tag; it no longer automatically overrides the engine's quality grade.
-- Review explanations include strategic move descriptions and engine alternatives.
-- Positive evaluation = White better; negative = Black better.
+## V2.5
+
+- Fixed Stockfish review synchronization. Each position now waits for `readyok` before the next depth-14 search begins, preventing an old `bestmove` or score from contaminating the next position.
+- Review controls and the detailed move explanation now appear in a dedicated panel directly below the board, with Previous / Next controls kept visible on mobile.
+- Checkmate and stalemate are explicitly detected after every bot move. Checkmate now produces a board overlay with the result and a Review Game button.
+- The final mating move is labeled Checkmate in review instead of Not analyzed.
+- Train and Study now both transition automatically from the end of the opening into a Middlegame Lab for roughly 10 additional moves.
+- Study shows the full strategic blueprint. Train hides it initially so you must recall the plan; Hint reveals it.
+- Every one of the 20 current repertoire branches maps to one of 18 validated middlegame structures.
+- End-of-line detection happens before wrong-move handling, removing the blank “next move is .” behavior.
+- Mate evaluations are shown as M# / -M#, and positive numerical evaluation always favors White.
+
+## Modes
+
+### Train
+Recall opening moves without answers shown. Wrong legal moves are explained and reset. At the end of theory, continue into Middlegame Recall.
+
+### Study
+Recommended opening moves and explanations are shown. At the end of theory, continue from the exact final opening position with the full middlegame blueprint visible.
+
+### vs Bot
+Play a complete game and review it move by move with Stockfish-backed analysis when the browser engine is available.
 
 GitHub Pages: deploy `main` from `/ (root)`.

@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChessTool V2.4</title>
+<title>ChessTool V2.5</title>
 <link rel="stylesheet" href="styles.css">
 
 </head>
 <body>
 <header>
-  <div class="logo">♟ ChessTool <small>English · Caro-Kann · V2.4</small></div>
+  <div class="logo">♟ ChessTool <small>English · Caro-Kann · V2.5</small></div>
   <nav>
     <button class="nb on"  onclick="setMode('drill')">Train</button>
     <button class="nb"     onclick="setMode('explorer')">Study</button>
@@ -26,10 +26,25 @@
           <div class="frow" id="flabels"></div>
         </div>
       </div>
+      <div id="gameoveroverlay" class="gameoveroverlay hidden">
+        <div class="gameoverbox">
+          <div id="gameovertitle">Game over</div>
+          <div id="gameovertext"></div>
+          <button class="cb p" onclick="showReview()">Review Game</button>
+        </div>
+      </div>
     </div>
     <div class="playhud" id="playhud">
       <div class="playhudtop"><span id="hudopening">Starting Position</span><span id="hudeco"></span></div>
       <div id="hudmsg">Choose Train, Study, or vs Bot.</div>
+    </div>
+    <div id="reviewdock" class="reviewdock hidden">
+      <div class="reviewnav">
+        <button class="cb" onclick="reviewStep(-1)">← Previous</button>
+        <span id="dockreviewpos">Starting position</span>
+        <button class="cb" onclick="reviewStep(1)">Next →</button>
+      </div>
+      <div id="dockreviewdetail" class="reviewdetail">Tap Next to begin reviewing the game.</div>
     </div>
     <div class="bctrl">
       <button class="cb" onclick="goBack()">← Back</button>
@@ -90,7 +105,7 @@
       </div>
     </div>
     <div class="card hidden" id="planinfocard">
-      <div class="ch">Position Blueprint</div>
+      <div class="ch" id="planinfoheader">Middlegame Blueprint</div>
       <div class="cb2" id="planinfo"></div>
     </div>
     <div class="card hidden" id="botcard">
