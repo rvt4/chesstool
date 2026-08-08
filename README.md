@@ -1,45 +1,45 @@
-# ChessTool V2.11
+# ChessTool V2.12
 
-Small corrective patch focused on engine score perspective.
+Focused review-accuracy patch.
 
-## Fixed: side-to-move score normalization
+## More stable opening evaluations
 
-The Stockfish.js build used by ChessTool reports evaluations from the **side to move**.
+Through move 20, ChessTool already runs a constrained Stockfish search on the move actually played from the same parent position.
 
-V2.10 mistakenly treated those values as if they were already White-relative. That caused impossible-looking alternation such as:
+V2.12 now uses that same-parent result for the **displayed evaluation as well as the move grade** when available. The independently analyzed resulting position remains a cross-check.
 
-`+3.7 → -3.5 → +3.9 → -3.8`
+This is designed to reduce misleading quiet-opening swings caused by two separately searched positions disagreeing by 0.5–1.0+ pawns.
 
-and mate sequences such as:
+If the searches disagree materially, the move explanation says so explicitly.
 
-`-M8 → M4 → -M3`.
+## Brilliant now requires a persistent sacrifice
 
-V2.11 restores the correct normalization:
+A temporary material drop is no longer enough.
 
-- White to move: use the engine score as-is.
-- Black to move: flip the sign.
-- Positive always means White is better / White has the forced mate.
-- Negative always means Black is better / Black has the forced mate.
+ChessTool follows the principal variation through the immediate capture/recapture window. If the material is simply recovered immediately — for example:
 
-This applies equally to centipawn and mate scores.
+`Qxd5 Qxd5 Bxd5`
 
-## Regression safeguards
+— the move is treated as an exchange sequence, not a Brilliant sacrifice.
 
-ChessTool now sanity-checks normalized engine results when they are stored for:
+A Brilliant still requires:
+- Stockfish's top move;
+- essentially no loss versus best;
+- meaningful non-pawn material offered;
+- opponent accepts it in the PV;
+- material remains genuinely sacrificed after the immediate recapture window.
 
-- live middlegame coaching;
-- same-parent move analysis;
-- position-by-position Game Review.
+## Forced-mate grading is conversion-aware
 
-Game Review also flags unexpected changes in which side has a forced mate between consecutive positions so this class of perspective bug is easier to catch during testing.
+If you have a forced mate and preserve it:
+- fastest/best mate: `! Great`
+- same or faster non-best mate: `✓ Excellent`
+- only 1–2 moves slower: `● Good`
+- 3–4 moves slower: `?! Inaccuracy`
+- 5–7 moves slower: `? Mistake`
+- very large delay: `?? Blunder`
+- throw away the forced mate entirely: `ⓧ Miss`
 
-## Kept from V2.10
+If you are already being forcibly mated, ChessTool now focuses on resistance quality. Small changes in mate distance are no longer called Blunders.
 
-- Same-parent move grading through move 20.
-- Deeper early-game analysis.
-- Stability warnings when searches disagree materially.
-- Strict Brilliant verification.
-- Humanized 1400 / 1600 / 1800 / 2000 bots.
-- Tactical conversion override.
-- Unified opening → middlegame Train mode.
-- Rich move explanations.
+Everything else from V2.11 remains intact.
