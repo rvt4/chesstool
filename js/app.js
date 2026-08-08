@@ -66,6 +66,7 @@ let QUIZ_RESULT=null;
 let SF=null,SF_CB=null,SF_READY=false,SF_FAILED=false,SF_TIMER=null,SF_READY_CB=null;
 let SF_ANALYSIS_QUEUE=Promise.resolve();
 let SF_LAST_INFO=null;
+let SF_MULTI_INFO={};
 let REVIEW_FENS=[],REVIEW_INDEX=0,REVIEW_RESULTS=[];
 let LAST_COACH='';
 
@@ -414,7 +415,7 @@ function handleStudyMiddlegameMove(uci){
     const bestUci=MID_PRE_ANALYSIS?.best||null;
     const bestSan=bestUci?uci2san(beforeFen,bestUci):'';
     const grade=classifyMove({entry:{uci,san},beforeFen,afterFen,bestUci,beforeEval,afterEval,probLoss:loss,inBook:false,beforeInfo:MID_PRE_ANALYSIS?.info});
-    const explanation=liveMoveExplanation(san,grade,bestSan,loss,STUDY_PLAN);
+    const explanation=liveMoveExplanation(beforeFen,san,grade,bestSan,loss,STUDY_PLAN);
     MID_FEEDBACK=grade.icon+' <strong>'+grade.label+'</strong> — '+explanation;
     setStat(grade.icon+' '+grade.label+': '+san,'info');setCoach(stripHtml(MID_FEEDBACK));
     renderStudy();
@@ -434,14 +435,19 @@ function handleStudyMiddlegameMove(uci){
     setTimeout(studyPlanBotReply,700);
   });
 }
-function liveMoveExplanation(san,grade,bestSan,loss,plan){
+function liveMoveExplanation(beforeFen,san,grade,bestSan,loss,plan){
   const bits=[];
   if(grade.label==='Best')bits.push(san+' is Stockfish’s top move.');
-  else if(bestSan&&bestSan!==san)bits.push('Stockfish prefers '+bestSan+'.');
+  else if(bestSan&&bestSan!==san){
+    const bu=san2uci(beforeFen,bestSan);
+    bits.push('Stockfish prefers '+bestSan+(bu?' because it '+movePurpose(beforeFen,bu):'')+'.');
+  }
   if(loss!=null&&loss>.02)bits.push('Your move gave up about '+Math.round(loss*100)+' percentage points of estimated winning chances.');
   if(plan){
-    bits.push('Plan reminder: '+plan.goal);
-    bits.push('Key break: '+plan.breaks);
+    bits.push('Strategic goal: '+plan.goal);
+    bits.push('Key pawn break: '+plan.breaks);
+    bits.push('Ideal piece setup: '+plan.pieces);
+    if(['Inaccuracy','Mistake','Miss','Blunder'].includes(grade.label))bits.push('Before retrying, ask whether your move helped that plan or answered the opponent’s threat: '+plan.opp);
   }
   if(['Inaccuracy','Mistake','Miss','Blunder'].includes(grade.label))bits.push('The position will reset so you can find a stronger continuation.');
   else bits.push('Good enough to continue; the opponent will now respond.');
@@ -520,7 +526,12 @@ function initSF(){
         if(msg.startsWith('info ')){
           const sm=msg.match(/score (cp|mate) (-?\d+)/);
           const pv=msg.match(/ pv (.+)$/);
-          if(sm)SF_LAST_INFO={type:sm[1],value:+sm[2],pv:pv?pv[1].trim().split(/\s+/):[]};
+          const mm=msg.match(/ multipv (\d+)/);
+          if(sm){
+            const inf={type:sm[1],value:+sm[2],pv:pv?pv[1].trim().split(/\s+/):[],multipv:mm?+mm[1]:1};
+            SF_LAST_INFO=inf;
+            SF_MULTI_INFO[inf.multipv]=inf;
+          }
         }
         if(msg.startsWith('bestmove')&&SF_CB){
           clearTimeout(SF_TIMER);
@@ -605,23 +616,50 @@ function sfBestMove(fen,skill,cb){
 }
 
 function ratingToSkill(rating){return rating<=1400?4:rating<=1600?8:rating<=1800?12:16;}
+function humanChoiceWeights(rating){
+  if(rating<=1400)return [0.48,0.28,0.15,0.09];
+  if(rating<=1600)return [0.60,0.24,0.11,0.05];
+  if(rating<=1800)return [0.73,0.18,0.07,0.02];
+  return [0.84,0.12,0.035,0.005];
+}
+function weightedIndex(weights,n){
+  const w=weights.slice(0,n),sum=w.reduce((x,y)=>x+y,0);
+  let r=Math.random()*sum;
+  for(let i=0;i<w.length;i++){r-=w[i];if(r<=0)return i;}
+  return Math.max(0,w.length-1);
+}
 function sfBestMoveRated(fen,rating,cb){
   const fallback=()=>setTimeout(()=>cb(localBestMove(fen,ratingToSkill(rating))),180);
   if(!SF||SF_FAILED){fallback();return;}
+  const multi=rating<=1400?4:rating<=1800?3:2;
+  SF_MULTI_INFO={};SF_LAST_INFO=null;
   SF_CB=(move,info)=>{
-    const safe=isLegalEngineMove(fen,move)?move:localBestMove(fen,ratingToSkill(rating));
-    cb(safe,info);
+    try{SF.postMessage('setoption name MultiPV value 1');}catch(e){}
+    const candidates=[];
+    for(let i=1;i<=multi;i++){
+      const x=SF_MULTI_INFO[i];
+      const u=x?.pv?.[0];
+      if(u&&isLegalEngineMove(fen,u)&&!candidates.some(c=>c.uci===u))candidates.push({uci:u,info:x});
+    }
+    if(!candidates.length&&isLegalEngineMove(fen,move))candidates.push({uci:move,info});
+    if(!candidates.length){cb(localBestMove(fen,ratingToSkill(rating)),info);return;}
+    // Sample among strong engine candidates instead of asking UCI_LimitStrength
+    // to behave like an exact human rating. This creates realistic variety
+    // while avoiding random nonsense.
+    const pick=candidates[weightedIndex(humanChoiceWeights(rating),candidates.length)];
+    cb(pick.uci,pick.info);
   };
-  const mt=rating<=1400?650:rating<=1600?900:rating<=1800?1200:1550;
+  const mt=rating<=1400?700:rating<=1600?900:rating<=1800?1150:1450;
   try{
-    SF.postMessage('setoption name UCI_LimitStrength value true');
-    SF.postMessage('setoption name UCI_Elo value '+rating);
+    SF.postMessage('setoption name UCI_LimitStrength value false');
+    SF.postMessage('setoption name Skill Level value 20');
+    SF.postMessage('setoption name MultiPV value '+multi);
     SF.postMessage('position fen '+fen);
     SF.postMessage('go movetime '+mt);
     clearTimeout(SF_TIMER);
     SF_TIMER=setTimeout(()=>{
-      if(SF_CB){const done=SF_CB;SF_CB=null;done(localBestMove(fen,ratingToSkill(rating)),null);}
-    },mt+1900);
+      if(SF_CB){const done=SF_CB;SF_CB=null;try{SF.postMessage('stop');SF.postMessage('setoption name MultiPV value 1');}catch(e){}done(localBestMove(fen,ratingToSkill(rating)),null);}
+    },mt+2000);
   }catch(e){SF_FAILED=true;SF=null;SF_CB=null;fallback();}
 }
 
@@ -680,8 +718,8 @@ function botRating(){
 
 function setBotSkill(s,lbl){
   BOT_SKILL=s;BOT_LABEL=lbl;
-  const labels=['1400','1600','1800','Full'];
-  ['sk0','sk1','sk2','sk3'].forEach((id,i)=>document.getElementById(id)?.classList.toggle('on',i===labels.indexOf(lbl)));
+  const labels=['1400','1600','1800','2000','Full'];
+  ['sk0','sk1','sk2','sk3','sk4'].forEach((id,i)=>document.getElementById(id)?.classList.toggle('on',i===labels.indexOf(lbl)));
 }
 function setBotColor(c){
   BOT_COLOR=c;
@@ -789,7 +827,7 @@ function sfAnalyzePositionDepth(fen,depth,cb,retry=0){
     SF.postMessage('stop');
     SF_READY_CB=()=>{
       if(finished)return;
-      SF_LAST_INFO=null;
+      SF_LAST_INFO=null;SF_MULTI_INFO={};
       SF_CB=(move,info)=>{
         if(!engineResultValid(fen,move,info)){
           console.warn('Discarding illegal/stale engine move for FEN',move,fen);
@@ -799,6 +837,7 @@ function sfAnalyzePositionDepth(fen,depth,cb,retry=0){
       };
       SF.postMessage('setoption name UCI_LimitStrength value false');
       SF.postMessage('setoption name Skill Level value 20');
+      SF.postMessage('setoption name MultiPV value 1');
       SF.postMessage('position fen '+fen);
       SF.postMessage('go depth '+depth);
     };
@@ -806,6 +845,32 @@ function sfAnalyzePositionDepth(fen,depth,cb,retry=0){
     SF_TIMER=setTimeout(()=>{try{SF.postMessage('stop');}catch(e){}finish(null);},depth>=14?16000:11000);
   }catch(e){SF_FAILED=true;try{SF?.terminate();}catch(x){}SF=null;finish(null);}
 }
+function sfAnalyzePlayedMove(fen,uci,depth,cb,retry=0){
+  if(!SF||SF_FAILED||!isLegalEngineMove(fen,uci)){cb(null);return;}
+  let finished=false;
+  const finish=res=>{
+    if(finished)return;finished=true;
+    clearTimeout(SF_TIMER);SF_READY_CB=null;SF_CB=null;
+    if(!res&&retry<1){setTimeout(()=>sfAnalyzePlayedMove(fen,uci,Math.max(10,depth-1),cb,retry+1),120);return;}
+    cb(res);
+  };
+  try{
+    SF_CB=null;SF_LAST_INFO=null;SF_MULTI_INFO={};SF.postMessage('stop');
+    SF_READY_CB=()=>{
+      if(finished)return;
+      SF_LAST_INFO=null;SF_MULTI_INFO={};
+      SF_CB=(move,info)=>finish(info?{best:uci,info}:null);
+      SF.postMessage('setoption name UCI_LimitStrength value false');
+      SF.postMessage('setoption name Skill Level value 20');
+      SF.postMessage('setoption name MultiPV value 1');
+      SF.postMessage('position fen '+fen);
+      SF.postMessage('go depth '+depth+' searchmoves '+uci);
+    };
+    SF.postMessage('isready');
+    SF_TIMER=setTimeout(()=>{try{SF.postMessage('stop');}catch(e){}finish(null);},12000);
+  }catch(e){finish(null);}
+}
+
 function sfAnalyzePosition(fen,cb){sfAnalyzePositionDepth(fen,14,cb);}
 
 function infoWhiteEval(fen,info){
@@ -927,7 +992,46 @@ function classifyMove({entry,beforeFen,afterFen,bestUci,beforeEval,afterEval,pro
   return{label:'Blunder',...MOVE_CLASS_META.Blunder};
 }
 function pieceName(p){return({P:'pawn',N:'knight',B:'bishop',R:'rook',Q:'queen',K:'king'})[p?.toUpperCase()]||'piece';}
-function reviewExplanation(entry,beforeFen,afterFen,bestSan,probLoss,engineOK,classification=''){
+function movePurpose(fen,uci){
+  if(!uci||!isLegalEngineMove(fen,uci))return'';
+  const {bd,turn}=parseFen(fen);
+  const ff=uci.charCodeAt(0)-97,fr=+uci[1]-1,tf=uci.charCodeAt(2)-97,tr=+uci[3]-1;
+  const pc=GP(bd,fr,ff),cap=GP(bd,tr,tf),nf=applyUci(fen,uci);
+  const san=uci2san(fen,uci);
+  const ideas=[];
+  if(san==='O-O'||san==='O-O-O')ideas.push('gets the king safe and connects the rooks');
+  if(cap)ideas.push('removes the '+pieceName(cap)+' on '+uci.slice(2,4));
+  if(inCheck(nf,parseFen(nf).turn))ideas.push('forces a reply with check');
+  if(pc&&pc.toUpperCase()==='P'&&['d','e'].includes(uci[0]))ideas.push('challenges the center');
+  if(pc&&pc.toUpperCase()==='P'&&['c','f'].includes(uci[0])&&Math.abs(tr-fr)>=1)ideas.push('creates a useful pawn break');
+  if(pc&&['N','B'].includes(pc.toUpperCase())&&((turn==='w'&&fr===0)||(turn==='b'&&fr===7)))ideas.push('develops a minor piece');
+  if(pc&&pc.toUpperCase()==='R'&&['c','d','e'].includes(uci[2]))ideas.push('activates a rook toward the center');
+  if(pc&&pc.toUpperCase()==='Q'&&inCheck(nf,parseFen(nf).turn))ideas.push('uses the queen actively with tempo');
+  return ideas.length?ideas.slice(0,2).join(' and '):'improves the position without creating an immediate tactical concession';
+}
+function strategicMoveNotes(entry,beforeFen,afterFen,plyIndex){
+  const {bd,turn}=parseFen(beforeFen);
+  const ff=entry.uci.charCodeAt(0)-97,fr=+entry.uci[1]-1,tf=entry.uci.charCodeAt(2)-97,tr=+entry.uci[3]-1;
+  const pc=GP(bd,fr,ff),cap=GP(bd,tr,tf),notes=[];
+  const moveNo=Math.floor(plyIndex/2)+1;
+  if(moveNo>=6&&moveNo<=20){
+    if(pc&&pc.toUpperCase()==='P'&&['d','e'].includes(entry.uci[0]))
+      notes.push('Early-middlegame idea: this commits the central pawn structure, so check the resulting weak squares and pawn breaks before pushing.');
+    if(pc&&pc.toUpperCase()==='P'&&['f','g','h'].includes(entry.uci[0])){
+      const homeSide=turn==='w'?fr<=2:fr>=5;
+      if(homeSide)notes.push('King-safety check: a flank-pawn move near your king can create squares and diagonals the opponent may attack.');
+    }
+    if(pc&&pc.toUpperCase()==='Q'&&!cap)
+      notes.push('Development check: queen moves in this phase are strongest when they solve a concrete problem or gain tempo; otherwise improve the least-active piece first.');
+    if(pc&&['N','B'].includes(pc.toUpperCase())&&!cap)
+      notes.push('Piece-placement check: compare this square with the piece’s long-term job in the pawn structure, not just its immediate activity.');
+    if(cap)notes.push('Before this exchange, compare what each recapture changes: material, pawn structure, open files and king safety.');
+    if(inCheck(afterFen,parseFen(afterFen).turn))
+      notes.push('Because this gives check, calculate the opponent’s forcing replies before judging the positional benefit.');
+  }
+  return notes;
+}
+function reviewExplanation(entry,beforeFen,afterFen,bestSan,probLoss,engineOK,classification='',plyIndex=0){
   const {bd,turn}=parseFen(beforeFen);
   const ff=entry.uci.charCodeAt(0)-97,fr=+entry.uci[1]-1,tf=entry.uci.charCodeAt(2)-97,tr=+entry.uci[3]-1;
   const pc=GP(bd,fr,ff),cap=GP(bd,tr,tf);
@@ -937,18 +1041,18 @@ function reviewExplanation(entry,beforeFen,afterFen,bestSan,probLoss,engineOK,cl
     const why=stripHtml(node.note||'');
     parts.push(why?'📖 Repertoire: '+why:'📖 This move matches your stored repertoire.');
   }else{
-    if(entry.san==='O-O'||entry.san==='O-O-O')parts.push('Castling improves king safety and connects the rooks.');
-    else if(cap)parts.push('This '+pieceName(pc)+' captures a '+pieceName(cap)+' on '+entry.uci.slice(2,4)+', changing the material balance.');
-    else if(pc&&pc.toUpperCase()==='N'&&((turn==='w'&&fr===0)||(turn==='b'&&fr===7)))parts.push('This develops a knight from its starting square and increases central influence.');
-    else if(pc&&pc.toUpperCase()==='B'&&((turn==='w'&&fr===0)||(turn==='b'&&fr===7)))parts.push('This develops a bishop and improves coordination.');
+    if(entry.san==='O-O'||entry.san==='O-O-O')parts.push('You castle, improving king safety and connecting the rooks.');
+    else if(cap)parts.push('You exchange your '+pieceName(pc)+' for the '+pieceName(cap)+' on '+entry.uci.slice(2,4)+'.');
+    else if(pc&&pc.toUpperCase()==='N'&&((turn==='w'&&fr===0)||(turn==='b'&&fr===7)))parts.push('You develop a knight and increase its influence on the center.');
+    else if(pc&&pc.toUpperCase()==='B'&&((turn==='w'&&fr===0)||(turn==='b'&&fr===7)))parts.push('You develop a bishop and change its diagonal.');
     else if(pc&&pc.toUpperCase()==='P'&&['c','d','e','f'].includes(entry.uci[0]))parts.push('This pawn move changes the center and the available pawn breaks.');
-    else parts.push('This move changes the placement and coordination of your pieces.');
+    else parts.push('This move changes your piece coordination and the squares you control.');
   }
   if(inCheck(afterFen,parseFen(afterFen).turn))parts.push('It gives check, so the opponent must answer the threat immediately.');
 
   const meanings={
-    Brilliant:'Exceptional engine-best move involving a sound material sacrifice.',
-    Great:'A critical engine-best move in a tactically important position.',
+    Brilliant:'Exceptional engine-best move involving a verified sound material sacrifice.',
+    Great:'A critical engine-best move in a forcing position.',
     Best:'Stockfish’s top choice.',
     Excellent:'Essentially as strong as the top choice.',
     Good:'A solid move with only a small loss in winning chances.',
@@ -963,11 +1067,18 @@ function reviewExplanation(entry,beforeFen,afterFen,bestSan,probLoss,engineOK,cl
 
   if(engineOK&&bestSan){
     if(bestSan===entry.san)parts.push('The move matches Stockfish’s first choice.');
-    else if(probLoss!=null&&probLoss>.02)parts.push('Stockfish preferred '+bestSan+'; the played move reduced estimated winning chances by about '+Math.round(probLoss*100)+' percentage points.');
-    else parts.push('Stockfish slightly preferred '+bestSan+', but the practical difference was small.');
+    else{
+      const bestUci=san2uci(beforeFen,bestSan);
+      const purpose=bestUci?movePurpose(beforeFen,bestUci):'improves the position';
+      if(probLoss!=null&&probLoss>.02)
+        parts.push('Stockfish preferred '+bestSan+', which '+purpose+'. Your move gave up about '+Math.round(probLoss*100)+' percentage points of estimated winning chances.');
+      else parts.push('Stockfish slightly preferred '+bestSan+', which '+purpose+', but the practical difference was small.');
+    }
   }else if(!engineOK){
     parts.push('Stockfish analysis was unavailable for this position, so ChessTool is not inventing a numeric grade.');
   }
+
+  strategicMoveNotes(entry,beforeFen,afterFen,plyIndex).forEach(x=>parts.push(x));
   return parts.join(' ');
 }
 
@@ -1033,49 +1144,66 @@ function analyzeReview(){
     if(eng)eng.textContent='Stockfish unavailable';
     REVIEW_RESULTS=BOT_LOG.map((e,i)=>{
       const inBook=!!DB[e.fen]?.moves?.[e.san];
-      return{grade:'Not analyzed',icon:'…',cls:'rn',inBook,evalAfter:null,bestSan:'',explanation:reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],'',null,false,'Not analyzed')};
+      return{grade:'Not analyzed',icon:'…',cls:'rn',inBook,evalAfter:null,bestSan:'',explanation:reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],'',null,false,'Not analyzed',i)};
     });
     renderReviewList();renderReviewDetail();return;
   }
   if(eng)eng.textContent='Stockfish 0%';
   const posResults=new Array(REVIEW_FENS.length);
+  const playedResults=new Array(BOT_LOG.length);
   let k=0;
-  function next(){
-    if(k>=REVIEW_FENS.length){
-      REVIEW_RESULTS=BOT_LOG.map((e,i)=>{
-        const before=posResults[i],after=posResults[i+1];
-        const mover=parseFen(e.fen).turn;
-        const eb=before?.eval||null,ea=after?.eval||null;
-        const pb=whiteWinProb(eb),pa=whiteWinProb(ea);
-        let probLoss=(pb==null||pa==null)?null:Math.max(0,mover==='w'?pb-pa:pa-pb);
-        const inBook=!!DB[e.fen]?.moves?.[e.san];
-        const bestUci=before?.best||null;
-        let c=classifyMove({entry:e,beforeFen:REVIEW_FENS[i],afterFen:REVIEW_FENS[i+1],bestUci,beforeEval:eb,afterEval:ea,probLoss,inBook,beforeInfo:before?.info});
 
-        // Browser depth can be noisy in the first few opening moves. A stored,
-        // legal repertoire move is never called a Blunder/Mistake solely from
-        // a shallow opening fluctuation unless the move actually loses >30%
-        // winning chances or walks into forced mate.
-        if(inBook&&i<12&&['Mistake','Miss','Blunder'].includes(c.label)&&!(probLoss!=null&&probLoss>.30)&&ea?.kind!=='mate'){
-          c={label:'Good',...MOVE_CLASS_META.Good};
-        }
-        const bestSan=bestUci?uci2san(e.fen,bestUci):'';
-        const explanation=reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,probLoss,true,c.label);
-        return{grade:c.label,icon:c.icon,cls:c.cls,inBook,evalAfter:ea,bestSan,probLoss,explanation};
-      });
-      if(eng)eng.textContent='Stockfish complete';renderReviewList();renderReviewDetail();return;
-    }
+  function finalize(){
+    REVIEW_RESULTS=BOT_LOG.map((e,i)=>{
+      const before=posResults[i],after=posResults[i+1],played=playedResults[i];
+      const mover=parseFen(e.fen).turn;
+      const eb=before?.eval||null,displayAfter=after?.eval||null;
+      // For the opening and early middlegame, compare the best line and the
+      // played move from the SAME parent position. This removes much of the
+      // fake loss caused by comparing two independently searched positions.
+      const qualityAfter=played?.eval||displayAfter;
+      const pb=whiteWinProb(eb),pa=whiteWinProb(qualityAfter);
+      let probLoss=(pb==null||pa==null)?null:Math.max(0,mover==='w'?pb-pa:pa-pb);
+      const inBook=!!DB[e.fen]?.moves?.[e.san];
+      const bestUci=before?.best||null;
+      let c=classifyMove({entry:e,beforeFen:REVIEW_FENS[i],afterFen:REVIEW_FENS[i+1],bestUci,beforeEval:eb,afterEval:qualityAfter,probLoss,inBook,beforeInfo:before?.info});
+
+      if(inBook&&i<12&&['Mistake','Miss','Blunder'].includes(c.label)&&!(probLoss!=null&&probLoss>.30)&&qualityAfter?.kind!=='mate'){
+        c={label:'Good',...MOVE_CLASS_META.Good};
+      }
+      const bestSan=bestUci?uci2san(e.fen,bestUci):'';
+      const explanation=reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,probLoss,true,c.label,i);
+      return{grade:c.label,icon:c.icon,cls:c.cls,inBook,evalAfter:displayAfter,bestSan,probLoss,explanation,sameParent:!!played};
+    });
+    if(eng)eng.textContent='Stockfish complete';
+    renderReviewList();renderReviewDetail();
+  }
+
+  function analyzePlayed(j){
+    const limit=Math.min(BOT_LOG.length,40); // through move 20
+    if(j>=limit){finalize();return;}
+    const e=BOT_LOG[j];
+    const depth=j<20?13:12;
+    if(eng)eng.textContent='Move accuracy '+Math.round(100*j/Math.max(1,limit))+'%';
+    sfAnalyzePlayedMove(e.fen,e.uci,depth,res=>{
+      playedResults[j]=res?{eval:infoWhiteEval(e.fen,res.info),info:res.info}:null;
+      analyzePlayed(j+1);
+    });
+  }
+
+  function next(){
+    if(k>=REVIEW_FENS.length){analyzePlayed(0);return;}
     const fen=REVIEW_FENS[k],idx=k;
     const tm=parseFen(fen).turn,lm=legalMoves(fen);
     if(!lm.length){
       if(inCheck(fen,tm))posResults[idx]={best:null,eval:{kind:'mate',value:tm==='w'?-1:1,terminal:true}};
       else posResults[idx]={best:null,eval:{kind:'cp',value:0,terminal:true,stalemate:true}};
-      k++;if(eng)eng.textContent='Stockfish '+Math.round(100*k/REVIEW_FENS.length)+'%';next();return;
+      k++;if(eng)eng.textContent='Position analysis '+Math.round(100*k/REVIEW_FENS.length)+'%';next();return;
     }
     const reviewDepth=idx<10?16:(idx<20?15:14);
     sfAnalyzePositionDepth(fen,reviewDepth,res=>{
       posResults[idx]=res?{best:res.best,eval:infoWhiteEval(fen,res.info),info:res.info}:{best:null,eval:null,info:null};
-      k++;if(eng)eng.textContent='Stockfish '+Math.round(100*k/REVIEW_FENS.length)+'%';next();
+      k++;if(eng)eng.textContent='Position analysis '+Math.round(100*k/REVIEW_FENS.length)+'%';next();
     });
   }
   next();
@@ -1179,7 +1307,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.8 loaded: tactical conversion override + deeper opening review + mate-distance grading');
+console.info('ChessTool V2.9 loaded: humanized rated bot + same-parent review grading + richer middlegame explanations');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
