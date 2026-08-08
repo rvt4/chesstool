@@ -1,4 +1,4 @@
-# ChessTool V2.19
+# ChessTool V2.20
 
 Repertoire-depth and mistake-pattern release.
 
@@ -38,3 +38,7 @@ the forced mate was lost even if the position remains winning.
 Everything from V2.18 remains, including Book-only repertoire labels, transposition
 recognition, Fast Review reliability/caching, tactical bot overrides, concrete punishment
 lines, Brilliant verification, mate grading, and middlegame coaching.
+
+
+## V2.20
+Mistake Coach now weights errors by severity, separates game phases, improves habit classification, and lets you replay saved mistake positions. Existing V2.19 local mistake history remains compatible.

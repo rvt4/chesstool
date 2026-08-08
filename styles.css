@@ -206,3 +206,10 @@ nav{display:flex;gap:5px;flex-wrap:wrap}
 .trendhint{margin-top:9px;padding:8px;border-radius:5px;background:var(--mbg);font-size:.72rem;line-height:1.45}
 .trendempty{font-size:.73rem;color:var(--muted);line-height:1.5}
 .mini{border:1px solid var(--bdr);background:transparent;color:var(--muted);border-radius:4px;padding:3px 7px;font-size:.65rem}
+/* V2.20 mistake coach */
+.trendbutton{width:100%;background:none;color:inherit;border-left:0;border-right:0;border-bottom:0;text-align:left;cursor:pointer}
+.trendrow small{display:block;color:var(--muted);font-size:.58rem;font-weight:400;margin-top:2px}
+.phasegrid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+.phasepill{border:1px solid var(--bdr);border-radius:5px;padding:7px;text-align:center}.phasepill b{display:block;color:var(--acc);font-size:.9rem}.phasepill span{font-size:.61rem;color:var(--muted)}
+.recenterr>div{display:flex;flex-direction:column;min-width:0;flex:1}.recenterr .mini{align-self:center;flex:0 0 auto}
+.tinyclear{border:0;background:none;color:var(--acc);font:inherit;text-transform:none;letter-spacing:0;padding:0 0 0 5px}
