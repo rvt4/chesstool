@@ -1,23 +1,24 @@
-# ChessTool V2.15
+# ChessTool V2.16
 
-Focused Game Review reliability patch.
+Game Review finalization reliability patch.
 
-## Fixed: review stuck at "Verifying key moves X/X"
+## Fixed: stuck on "Finalizing review"
 
-V2.14 could send a final checkmating move into a constrained `searchmoves`
-verification. Some browser Stockfish sessions do not return the normal
-`info -> bestmove` sequence for that terminal search, so the final callback never
-reached Game Review's `finalize()` function.
+The verification queue now finishes correctly, but V2.15 exposed a second failure:
+an exception inside the final move-by-move classification/explanation pass could stop
+the renderer while the status remained "Finalizing review".
 
-V2.15 fixes this at several levels:
+V2.16 makes finalization fault-tolerant:
 
-- Checkmate/stalemate moves never enter the secondary verification queue.
-- Fast mode does not redundantly re-verify ordinary forced-mate positions.
-- Every verification has an independent queue-level timeout.
-- A failed/timed-out verification is skipped rather than blocking the whole review.
-- `finalize()` is idempotent and guaranteed to run after the queue advances.
-- The final mating move is classified directly from ChessTool's legal-move/check
-  detection, so it does not depend on another Stockfish search.
+- Every move is finalized inside its own error boundary.
+- If one explanation/classification fails, only that move falls back to
+  "Not analyzed"; the rest of the review still renders.
+- The moves 8–20 coaching helper is now self-contained and no longer depends on an
+  optional square helper.
+- Illegal/stale best moves are ignored before SAN conversion.
+- A whole-review watchdog forces finalization if the browser worker becomes stuck.
+- There is a last-resort partial-review renderer, so Game Review should never remain
+  permanently on "Finalizing review".
 
-All V2.14 review caching, Fast/Deep modes, capped evaluations, practical repertoire
-grading, richer moves 8–20 coaching, bot behavior, and middlegame training remain.
+All V2.15 queue watchdog, terminal-move handling, caching, Fast/Deep review,
+practical opening grades, capped evaluations, bot play, and middlegame coaching remain.
