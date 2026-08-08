@@ -928,6 +928,8 @@ function evalText(ev){
   if(!ev)return'';
   if(ev.terminal)return ev.stalemate?'Draw':'Checkmate';
   if(ev.kind==='mate')return(ev.value>0?'M':'-M')+Math.abs(ev.value);
+  if(ev.value>=10)return'+10.0+';
+  if(ev.value<=-10)return'-10.0+';
   return(ev.value>=0?'+':'')+ev.value.toFixed(2);
 }
 function whiteWinProb(ev){
@@ -1108,6 +1110,19 @@ function strategicMoveNotes(entry,beforeFen,afterFen,plyIndex){
   }
   return notes;
 }
+function earlyMiddlegameLesson(entry,beforeFen,afterFen,bestSan,grade,plyIndex){
+  const moveNo=Math.floor(plyIndex/2)+1;
+  if(moveNo<8||moveNo>20||!['Inaccuracy','Mistake','Miss','Blunder'].includes(grade))return'';
+  const from=entry.uci?.slice(0,2),to=entry.uci?.slice(2,4),moved=from?sqPiece(beforeFen,from):null;
+  const center=['c4','d4','e4','f4','c5','d5','e5','f5'],notes=[];
+  if(moved&&moved.toLowerCase()==='p'&&center.includes(to))notes.push('This central pawn move changes the structure immediately, so check captures, pawn breaks, and newly opened lines before committing.');
+  if(moved&&moved.toLowerCase()==='p'&&to&&['f','g','h'].includes(to[0]))notes.push('This flank pawn move changes squares around the king; make sure the space gain is worth the weakened squares.');
+  if((entry.san||'').includes('x'))notes.push('Calculate the full capture/recapture sequence, not just the first exchange.');
+  if(moved&&['n','b','r','q'].includes(moved.toLowerCase()))notes.push('In the early middlegame, compare piece coordination and ask whether this leaves a piece or pawn loose.');
+  if(bestSan)notes.push('Compare with '+bestSan+': identify the threat, development gain, or structural improvement that move creates.');
+  if(!notes.length)notes.push('Scan checks, captures, and direct threats for both sides, then improve your least-active piece.');
+  return' Middlegame lesson: '+notes.slice(0,2).join(' ');
+}
 function reviewExplanation(entry,beforeFen,afterFen,bestSan,probLoss,engineOK,classification='',plyIndex=0){
   const {bd,turn}=parseFen(beforeFen);
   const ff=entry.uci.charCodeAt(0)-97,fr=+entry.uci[1]-1,tf=entry.uci.charCodeAt(2)-97,tr=+entry.uci[3]-1;
@@ -1265,10 +1280,15 @@ function analyzeReview(){
       const displayAfter=(i<40&&played?.eval)?played.eval:resultPositionEval,pb=whiteWinProb(eb),pa=whiteWinProb(qualityAfter);
       const probLoss=(pb==null||pa==null)?null:Math.max(0,mover==='w'?pb-pa:pa-pb),inBook=!!DB[e.fen]?.moves?.[e.san],bestUci=before?.best||null;
       let c=classifyMove({entry:e,beforeFen:REVIEW_FENS[i],afterFen:REVIEW_FENS[i+1],bestUci,beforeEval:eb,afterEval:qualityAfter,probLoss,inBook,beforeInfo:before?.info});
-      if(inBook&&i<16&&probLoss!=null&&probLoss<=.035&&!['Best','Great','Brilliant','Checkmate','Forced'].includes(c.label))c={label:'Good',...MOVE_CLASS_META.Good};
-      if(inBook&&i<12&&['Mistake','Miss','Blunder'].includes(c.label)&&!(probLoss!=null&&probLoss>.25)&&qualityAfter?.kind!=='mate')c={label:'Good',...MOVE_CLASS_META.Good};
+      // Tiny engine preferences between sound repertoire moves are not opening mistakes.
+      if(inBook&&i<20&&qualityAfter?.kind!=='mate'){
+        if(probLoss==null||probLoss<=.065){
+          if(!['Best','Great','Brilliant','Checkmate','Forced','Excellent'].includes(c.label))c={label:'Good',...MOVE_CLASS_META.Good};
+        }else if(probLoss<=.11&&['Mistake','Miss','Blunder'].includes(c.label))c={label:'Inaccuracy',...MOVE_CLASS_META.Inaccuracy};
+      }
       const bestSan=bestUci?uci2san(e.fen,bestUci):'';
       let explanation=reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,probLoss,true,c.label,i);
+      explanation+=earlyMiddlegameLesson(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,c.label,i);
       if(played)explanation+=' This move received a targeted same-parent verification.';
       explanation+=reviewStabilityNote(qualityAfter,resultPositionEval,i);explanation+=matePerspectiveTransitionNote(eb,displayAfter);
       return{grade:c.label,icon:c.icon,cls:c.cls,inBook,evalAfter:displayAfter,bestSan,probLoss,explanation,sameParent:!!played};
@@ -1394,7 +1414,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.13 loaded: fast cached review + selective verification + local-engine-ready architecture');
+console.info('ChessTool V2.14 loaded: practical opening grades + capped evals + richer moves 8-20 coaching');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
