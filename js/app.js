@@ -70,100 +70,106 @@ function repertoireMoveStatus(fen,san){
 }
 function isRepertoireMove(fen,san){return repertoireMoveStatus(fen,san).inBook;}
 
-// ─── PERSISTENT MISTAKE TRENDS ─────────────────────────────────────────────
+// ─── PERSISTENT MISTAKE TRENDS · V2.20 ─────────────────────────────────────
 const MISTAKE_LOG_KEY='chesstool_mistake_log_v1';
 const MISTAKE_LOG_MAX_GAMES=60;
+let TREND_FILTER='';
 function loadMistakeLog(){
-  try{
-    const x=JSON.parse(localStorage.getItem(MISTAKE_LOG_KEY)||'[]');
-    return Array.isArray(x)?x:[];
-  }catch(e){return[];}
+  try{const x=JSON.parse(localStorage.getItem(MISTAKE_LOG_KEY)||'[]');return Array.isArray(x)?x:[];}catch(e){return[];}
 }
 let MISTAKE_GAMES=loadMistakeLog();
-
+function mistakePhase(ply,inBook){
+  const n=Math.floor(ply/2)+1;
+  if(inBook||n<=8)return'Opening';
+  if(n<=20)return'Early middlegame';
+  if(n<=35)return'Middlegame';
+  return'Endgame';
+}
+function evalImpact(beforeEval,afterEval,mover,grade){
+  if(beforeEval?.kind==='mate'){
+    const hadMate=(mover==='w'&&beforeEval.value>0)||(mover==='b'&&beforeEval.value<0);
+    const stillMate=afterEval?.kind==='mate'&&((mover==='w'&&afterEval.value>0)||(mover==='b'&&afterEval.value<0));
+    if(hadMate&&!stillMate)return 12;
+  }
+  if(afterEval?.kind==='mate'){
+    const getsMated=(mover==='w'&&afterEval.value<0)||(mover==='b'&&afterEval.value>0);
+    if(getsMated)return 15;
+  }
+  if(beforeEval?.kind==='cp'&&afterEval?.kind==='cp')return Math.max(0,mover==='w'?beforeEval.value-afterEval.value:afterEval.value-beforeEval.value);
+  return({Inaccuracy:.5,Mistake:1.5,Miss:2.5,Blunder:3.5}[grade]||.5);
+}
+function severityWeight(grade,impact){
+  const base={Inaccuracy:1,Mistake:2,Miss:3,Blunder:4}[grade]||1;
+  return +(base+Math.min(8,Math.max(0,impact||0))*.75).toFixed(2);
+}
 function mistakeCategory(entry,beforeFen,afterFen,grade,explanation,beforeEval,afterEval,plyIndex){
-  const txt=(explanation||'').toLowerCase();
+  const txt=(explanation||'').toLowerCase(),mover=parseFen(beforeFen).turn;
   const moveNo=Math.floor(plyIndex/2)+1;
-  if(grade==='Miss'&&beforeEval?.kind==='mate'&&afterEval?.kind!=='mate')return'Missed forced mate';
-  if(txt.includes('captures the piece you just moved')||txt.includes('loose piece')||txt.includes('wins a piece'))return'Hanging / loose piece';
-  if(txt.includes('forcing capture')||txt.includes('capture/recapture'))return'Calculation / exchanges';
-  if(txt.includes('with check')||txt.includes('king-side squares')||txt.includes('king safety'))return'King safety';
-  try{
-    const {bd}=parseFen(beforeFen),from=entry.uci.slice(0,2),to=entry.uci.slice(2,4);
-    const ff=from.charCodeAt(0)-97,fr=+from[1]-1,pc=GP(bd,fr,ff);
-    if(pc&&pc.toUpperCase()==='Q'&&moveNo<=15)return'Queen moved too early / tempo';
-    if(pc&&pc.toUpperCase()==='P'&&['c','d','e','f'].includes(to[0])&&moveNo<=20)return'Central pawn decision';
-    if(pc&&pc.toUpperCase()==='P'&&['f','g','h'].includes(to[0]))return'King-side pawn weakening';
-    if(pc&&['N','B','R'].includes(pc.toUpperCase()))return'Piece coordination';
-  }catch(e){}
+  if(beforeEval?.kind==='mate'){
+    const had=(mover==='w'&&beforeEval.value>0)||(mover==='b'&&beforeEval.value<0);
+    const kept=afterEval?.kind==='mate'&&((mover==='w'&&afterEval.value>0)||(mover==='b'&&afterEval.value<0));
+    if(had&&!kept)return'Missed forced mate';
+  }
+  if(afterEval?.kind==='mate'){
+    const bad=(mover==='w'&&afterEval.value<0)||(mover==='b'&&afterEval.value>0);
+    if(bad)return'King safety / mate threat';
+  }
+  if(txt.includes('mate')||txt.includes('checkmating')||txt.includes('king safety'))return'King safety / mate threat';
+  if(txt.includes('captures the piece you just moved')||txt.includes('loose piece')||txt.includes('undefended')||txt.includes('wins a piece'))return'Hanging / undefended piece';
+  if(txt.includes('forcing capture')||txt.includes('capture/recapture')||txt.includes('exchange'))return'Calculation / exchanges';
+  if(txt.includes('threat')||txt.includes('opponent'))return'Missed opponent threat';
   if(grade==='Miss')return'Missed tactic';
+  try{
+    const {bd}=parseFen(beforeFen),from=entry.uci.slice(0,2),to=entry.uci.slice(2,4),ff=from.charCodeAt(0)-97,fr=+from[1]-1,pc=GP(bd,fr,ff);
+    if(pc&&pc.toUpperCase()==='Q'&&moveNo<=15)return'Premature queen move / tempo';
+    if(pc&&pc.toUpperCase()==='P'&&['c','d','e','f'].includes(to[0])&&moveNo<=20)return'Pawn break / central decision';
+    if(pc&&pc.toUpperCase()==='P'&&['f','g','h'].includes(to[0])&&moveNo<=25)return'Premature attack / pawn weakening';
+    if(pc&&['N','B','R'].includes(pc.toUpperCase()))return'Piece activity / coordination';
+  }catch(e){}
   if(grade==='Blunder')return'Tactical oversight';
   return'Decision quality';
 }
-function gameFingerprint(){
-  return BOT_LOG.map(e=>e.uci).join('-');
-}
+function gameFingerprint(){return BOT_LOG.map(e=>e.uci).join('-');}
 function reviewedGameResult(){
-  try{
-    const fen=REVIEW_FENS[REVIEW_FENS.length-1]||FEN,turn=parseFen(fen).turn,lm=legalMoves(fen);
-    if(lm.length)return'completed';
-    if(!inCheck(fen,turn))return'draw';
-    const userSide=BOT_GAME_COLOR==='white'?'w':'b';
-    return turn===userSide?'loss':'win';
-  }catch(e){return'completed';}
+  try{const fen=REVIEW_FENS[REVIEW_FENS.length-1]||FEN,turn=parseFen(fen).turn,lm=legalMoves(fen);if(lm.length)return'completed';if(!inCheck(fen,turn))return'draw';const userSide=BOT_GAME_COLOR==='white'?'w':'b';return turn===userSide?'loss':'win';}catch(e){return'completed';}
 }
 function saveMistakeTrends(){
   if(!BOT_LOG.length||!REVIEW_RESULTS.length)return;
-  const fp=gameFingerprint();
-  const errors=[];
+  const fp=gameFingerprint(),errors=[];
   BOT_LOG.forEach((e,i)=>{
-    if(e.byBot)return;
-    const r=REVIEW_RESULTS[i];
-    if(!r||!['Inaccuracy','Mistake','Miss','Blunder'].includes(r.grade))return;
-    const before=REVIEW_FENS[i],after=REVIEW_FENS[i+1];
-    errors.push({
-      move:reviewMoveLabel(i),
-      san:e.san,
-      grade:r.grade,
-      category:mistakeCategory(e,before,after,r.grade,r.explanation,r.beforeEval||null,r.qualityAfter||null,i),
-      best:r.bestSan||'',
-      explanation:(r.explanation||'').slice(0,420),
-      ply:i,
-      ts:Date.now()
-    });
+    if(e.byBot)return;const r=REVIEW_RESULTS[i];if(!r||!['Inaccuracy','Mistake','Miss','Blunder'].includes(r.grade))return;
+    const before=REVIEW_FENS[i],after=REVIEW_FENS[i+1],mover=parseFen(before).turn,impact=evalImpact(r.beforeEval||null,r.qualityAfter||null,mover,r.grade),inBook=!!r.inBook;
+    errors.push({move:reviewMoveLabel(i),san:e.san,grade:r.grade,category:mistakeCategory(e,before,after,r.grade,r.explanation,r.beforeEval||null,r.qualityAfter||null,i),phase:mistakePhase(i,inBook),impact:+impact.toFixed(2),weight:severityWeight(r.grade,impact),best:r.bestSan||'',explanation:(r.explanation||'').slice(0,420),fen:before,ply:i,ts:Date.now()});
   });
   const game={id:fp,ts:Date.now(),bot:BOT_LABEL,color:BOT_GAME_COLOR,result:reviewedGameResult(),errors};
-  const existing=MISTAKE_GAMES.findIndex(g=>g.id===fp);
-  if(existing>=0)MISTAKE_GAMES[existing]=game;else MISTAKE_GAMES.push(game);
-  MISTAKE_GAMES=MISTAKE_GAMES.slice(-MISTAKE_LOG_MAX_GAMES);
-  try{localStorage.setItem(MISTAKE_LOG_KEY,JSON.stringify(MISTAKE_GAMES));}catch(e){}
-  renderMistakeTrends();
+  const existing=MISTAKE_GAMES.findIndex(g=>g.id===fp);if(existing>=0)MISTAKE_GAMES[existing]=game;else MISTAKE_GAMES.push(game);
+  MISTAKE_GAMES=MISTAKE_GAMES.slice(-MISTAKE_LOG_MAX_GAMES);try{localStorage.setItem(MISTAKE_LOG_KEY,JSON.stringify(MISTAKE_GAMES));}catch(e){}renderMistakeTrends();
+}
+function normalizedTrendErrors(){
+  return MISTAKE_GAMES.flatMap(g=>(g.errors||[]).map(x=>({...x,gameTs:g.ts,bot:g.bot,phase:x.phase||mistakePhase(x.ply||0,false),impact:Number.isFinite(x.impact)?x.impact:({Inaccuracy:.5,Mistake:1.5,Miss:2.5,Blunder:3.5}[x.grade]||.5),weight:Number.isFinite(x.weight)?x.weight:severityWeight(x.grade,0)})));
+}
+function trendView(category){TREND_FILTER=TREND_FILTER===category?'':category;renderMistakeTrends();}
+function trendViewPosition(gameId,ply){
+  const g=MISTAKE_GAMES.find(x=>x.id===gameId),e=g?.errors?.find(x=>x.ply===ply);if(!e?.fen)return;
+  FEN=e.fen;FLIPPED=g.color==='black';SEL=null;LDOTS=[];setLastUci(null);refreshPanel();drawBoard();
+  setCoach('Mistake replay · '+e.move+' '+e.san+'. Find a stronger move'+(e.best?' — engine best was '+e.best:'')+'.');
+  document.getElementById('board')?.scrollIntoView({behavior:'smooth',block:'center'});
 }
 function renderMistakeTrends(){
-  const host=document.getElementById('mistaketrends');if(!host)return;
-  const games=MISTAKE_GAMES,all=games.flatMap(g=>(g.errors||[]).map(x=>({...x,gameTs:g.ts,bot:g.bot})));
-  if(!games.length){
-    host.innerHTML='<div class="trendempty">Complete a Game Review and your recurring mistakes will appear here.</div>';
-    return;
-  }
-  const counts={};all.forEach(x=>counts[x.category]=(counts[x.category]||0)+1);
-  const ranked=Object.entries(counts).sort((x,y)=>y[1]-x[1]);
-  const recent=all.slice().sort((x,y)=>(y.ts||y.gameTs)-(x.ts||x.gameTs)).slice(0,5);
+  const host=document.getElementById('mistaketrends');if(!host)return;const games=MISTAKE_GAMES,all=normalizedTrendErrors();
+  if(!games.length){host.innerHTML='<div class="trendempty">Complete a Game Review and your recurring mistakes will appear here.</div>';return;}
+  const byCat={};all.forEach(x=>{const o=byCat[x.category]||(byCat[x.category]={n:0,w:0,serious:0});o.n++;o.w+=x.weight;o.serious+=['Mistake','Miss','Blunder'].includes(x.grade)?1:0;});
+  const ranked=Object.entries(byCat).sort((a,b)=>b[1].w-a[1].w),totalW=ranked.reduce((s,x)=>s+x[1].w,0)||1;
+  const phase={};all.forEach(x=>{const o=phase[x.phase]||(phase[x.phase]={n:0,w:0});o.n++;o.w+=x.weight;});
   const serious=all.filter(x=>['Mistake','Miss','Blunder'].includes(x.grade)).length;
-  const top=ranked.slice(0,4).map(([k,n])=>'<div class="trendrow"><span>'+k+'</span><b>'+n+'</b></div>').join('');
-  const recentHtml=recent.length?recent.map(x=>'<div class="recenterr"><b>'+x.move+' '+x.grade+'</b><span>'+x.category+(x.best?' · best '+x.best:'')+'</span></div>').join(''):'<div class="trendempty">No meaningful mistakes logged yet.</div>';
-  host.innerHTML=
-    '<div class="trendstats"><span><b>'+games.length+'</b> games</span><span><b>'+all.length+'</b> errors</span><span><b>'+serious+'</b> serious</span></div>'+
-    '<div class="trendsub">Recurring habits</div>'+ (top||'<div class="trendempty">No recurring habits yet.</div>')+
-    '<div class="trendsub">Recent mistakes</div>'+recentHtml+
-    '<div class="trendhint">'+(ranked.length?'Current focus: <b>'+ranked[0][0]+'</b>. Try to consciously check for this before every move.':'')+'</div>';
+  const top=ranked.slice(0,5).map(([k,v])=>'<button class="trendrow trendbutton" onclick="trendView('+JSON.stringify(k).replace(/"/g,'&quot;')+')"><span>'+k+' <small>'+Math.round(v.w/totalW*100)+'% impact</small></span><b>'+v.n+'</b></button>').join('');
+  const phaseHtml=['Opening','Early middlegame','Middlegame','Endgame'].map(k=>'<div class="phasepill"><b>'+((phase[k]||{}).n||0)+'</b><span>'+k+'</span></div>').join('');
+  const filtered=(TREND_FILTER?all.filter(x=>x.category===TREND_FILTER):all).slice().sort((x,y)=>(y.ts||y.gameTs)-(x.ts||x.gameTs)).slice(0,TREND_FILTER?12:5);
+  const recentHtml=filtered.length?filtered.map(x=>{const g=games.find(z=>(z.errors||[]).some(q=>q===x||q.ts===x.ts&&q.ply===x.ply));return'<div class="recenterr"><div><b>'+x.move+' '+x.san+' · '+x.grade+'</b><span>'+x.category+' · '+x.phase+(x.best?' · best '+x.best:'')+(x.impact>=.1?' · ~'+x.impact.toFixed(1)+' pawns':'')+'</span></div>'+(x.fen&&g?'<button class="mini" onclick="trendViewPosition('+JSON.stringify(g.id).replace(/"/g,'&quot;')+','+x.ply+')">Replay</button>':'')+'</div>';}).join(''):'<div class="trendempty">No matching mistakes.</div>';
+  const focus=ranked[0],focusText=focus?'Current focus: <b>'+focus[0]+'</b>. It represents about '+Math.round(focus[1].w/totalW*100)+'% of your weighted mistake impact.':' ';
+  host.innerHTML='<div class="trendstats"><span><b>'+games.length+'</b> games</span><span><b>'+all.length+'</b> errors</span><span><b>'+serious+'</b> serious</span></div><div class="trendsub">Game phase</div><div class="phasegrid">'+phaseHtml+'</div><div class="trendsub">Recurring habits · weighted by severity</div>'+top+'<div class="trendsub">'+(TREND_FILTER?'Mistakes · '+TREND_FILTER+' <button class="tinyclear" onclick="trendView(\'\')">show all</button>':'Recent mistakes')+'</div>'+recentHtml+'<div class="trendhint">'+focusText+'</div>';
 }
-function clearMistakeHistory(){
-  if(!confirm('Clear all saved ChessTool mistake history?'))return;
-  MISTAKE_GAMES=[];
-  try{localStorage.removeItem(MISTAKE_LOG_KEY);}catch(e){}
-  renderMistakeTrends();
-}
+function clearMistakeHistory(){if(!confirm('Clear all saved ChessTool mistake history?'))return;MISTAKE_GAMES=[];TREND_FILTER='';try{localStorage.removeItem(MISTAKE_LOG_KEY);}catch(e){}renderMistakeTrends();}
 
 // ─── GAME STATE ──────────────────────────────────────────────────────────────
 // CRITICAL: flipped is ONLY changed by explicit user action (flip button, toggle side, bot color, random line)
