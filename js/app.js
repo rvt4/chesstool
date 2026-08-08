@@ -68,6 +68,25 @@ let SF_ANALYSIS_QUEUE=Promise.resolve();
 let SF_LAST_INFO=null;
 let SF_MULTI_INFO={};
 let REVIEW_FENS=[],REVIEW_INDEX=0,REVIEW_RESULTS=[];
+let REVIEW_MODE='fast'; // fast | deep
+const ANALYSIS_CACHE_KEY='chesstool_analysis_cache_v13';
+const ANALYSIS_CACHE_MAX=650;
+let ANALYSIS_CACHE=loadAnalysisCache();
+function loadAnalysisCache(){
+  try{const raw=JSON.parse(localStorage.getItem(ANALYSIS_CACHE_KEY)||'{}');return raw&&typeof raw==='object'?raw:{};}catch(e){return{};}
+}
+function saveAnalysisCache(){
+  try{const entries=Object.entries(ANALYSIS_CACHE);if(entries.length>ANALYSIS_CACHE_MAX){entries.sort((a,b)=>(a[1]?.ts||0)-(b[1]?.ts||0));ANALYSIS_CACHE=Object.fromEntries(entries.slice(entries.length-ANALYSIS_CACHE_MAX));}localStorage.setItem(ANALYSIS_CACHE_KEY,JSON.stringify(ANALYSIS_CACHE));}catch(e){}
+}
+function analysisCacheKey(kind,fen,depth,uci=''){return ['sf-v13',kind,depth,uci,fen].join('|');}
+function analysisCacheGet(kind,fen,depth,uci=''){const x=ANALYSIS_CACHE[analysisCacheKey(kind,fen,depth,uci)];if(!x)return null;x.ts=Date.now();return x.result||null;}
+function analysisCachePut(kind,fen,depth,uci,result){if(!result)return;ANALYSIS_CACHE[analysisCacheKey(kind,fen,depth,uci)]={ts:Date.now(),result};saveAnalysisCache();}
+function setReviewMode(mode){
+  REVIEW_MODE=mode==='deep'?'deep':'fast';
+  document.getElementById('reviewfast')?.classList.toggle('on',REVIEW_MODE==='fast');
+  document.getElementById('reviewdeep')?.classList.toggle('on',REVIEW_MODE==='deep');
+  if(BOT_LOG.length&&document.getElementById('revcard')&&!document.getElementById('revcard').classList.contains('hidden')){REVIEW_RESULTS=[];renderReviewList();renderReviewDetail();analyzeReview();}
+}
 let LAST_COACH='';
 
 // ─── BOARD RENDERING ─────────────────────────────────────────────────────────
@@ -818,12 +837,15 @@ function engineResultValid(fen,move,info){
 }
 
 function sfAnalyzePositionDepth(fen,depth,cb,retry=0){
+  const cached=analysisCacheGet('pos',fen,depth);
+  if(cached){setTimeout(()=>cb(cached),0);return;}
   if(!SF||SF_FAILED){cb(null);return;}
   let finished=false;
   const finish=res=>{
     if(finished)return;finished=true;
     clearTimeout(SF_TIMER);SF_READY_CB=null;SF_CB=null;
     if(!res&&retry<2){setTimeout(()=>sfAnalyzePositionDepth(fen,Math.max(11,depth-1),cb,retry+1),160);return;}
+    if(res)analysisCachePut('pos',fen,depth,'',res);
     cb(res);
   };
   try{
@@ -850,12 +872,15 @@ function sfAnalyzePositionDepth(fen,depth,cb,retry=0){
   }catch(e){SF_FAILED=true;try{SF?.terminate();}catch(x){}SF=null;finish(null);}
 }
 function sfAnalyzePlayedMove(fen,uci,depth,cb,retry=0){
+  const cached=analysisCacheGet('played',fen,depth,uci);
+  if(cached){setTimeout(()=>cb(cached),0);return;}
   if(!SF||SF_FAILED||!isLegalEngineMove(fen,uci)){cb(null);return;}
   let finished=false;
   const finish=res=>{
     if(finished)return;finished=true;
     clearTimeout(SF_TIMER);SF_READY_CB=null;SF_CB=null;
     if(!res&&retry<1){setTimeout(()=>sfAnalyzePlayedMove(fen,uci,Math.max(10,depth-1),cb,retry+1),120);return;}
+    if(res)analysisCachePut('played',fen,depth,uci,res);
     cb(res);
   };
   try{
@@ -1214,83 +1239,63 @@ function analyzeReview(){
   const eng=document.getElementById('reviewengine');
   if(!SF||SF_FAILED){
     if(eng)eng.textContent='Stockfish unavailable';
-    REVIEW_RESULTS=BOT_LOG.map((e,i)=>{
-      const inBook=!!DB[e.fen]?.moves?.[e.san];
-      return{grade:'Not analyzed',icon:'…',cls:'rn',inBook,evalAfter:null,bestSan:'',explanation:reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],'',null,false,'Not analyzed',i)};
-    });
+    REVIEW_RESULTS=BOT_LOG.map((e,i)=>{const inBook=!!DB[e.fen]?.moves?.[e.san];return{grade:'Not analyzed',icon:'…',cls:'rn',inBook,evalAfter:null,bestSan:'',explanation:reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],'',null,false,'Not analyzed',i)};});
     renderReviewList();renderReviewDetail();return;
   }
-  if(eng)eng.textContent='Stockfish 0%';
-  const posResults=new Array(REVIEW_FENS.length);
-  const playedResults=new Array(BOT_LOG.length);
-  let k=0;
-
+  const posResults=new Array(REVIEW_FENS.length),playedResults=new Array(BOT_LOG.length);
+  let positionIndex=0,cachedHits=0,extraChecks=0;
+  function updateProgress(label,done,total){if(eng)eng.textContent=label+' '+done+'/'+total+(cachedHits?' · '+cachedHits+' cached':'');}
+  function provisionalLoss(i){const e=BOT_LOG[i],before=posResults[i],after=posResults[i+1];if(!before?.eval||!after?.eval)return null;const mover=parseFen(e.fen).turn,pb=whiteWinProb(before.eval),pa=whiteWinProb(after.eval);return Math.max(0,mover==='w'?pb-pa:pa-pb);}
+  function needsPlayedVerification(i){
+    const e=BOT_LOG[i],before=posResults[i],after=posResults[i+1];if(!before||!after)return false;
+    if(before.best===e.uci)return false;
+    const loss=provisionalLoss(i);if(loss==null)return true;
+    const inBook=!!DB[e.fen]?.moves?.[e.san];
+    if(REVIEW_MODE==='deep')return i<40;
+    if(before.eval?.kind==='mate'||after.eval?.kind==='mate')return true;
+    if(loss>=.045)return true;
+    if(inBook&&i<20&&loss>=.025)return true;
+    if(i<40&&evalDrift(before.eval,after.eval)>=1.75)return true;
+    return false;
+  }
   function finalize(){
     REVIEW_RESULTS=BOT_LOG.map((e,i)=>{
-      const before=posResults[i],after=posResults[i+1],played=playedResults[i];
-      const mover=parseFen(e.fen).turn;
-      const eb=before?.eval||null,resultPositionEval=after?.eval||null;
-      // Through move 20, the played-move search evaluates the exact move from
-      // the SAME parent position. Use that for both grading and the displayed
-      // evaluation when available; the independent resulting-position search
-      // remains a stability cross-check.
-      const qualityAfter=played?.eval||resultPositionEval;
-      const displayAfter=(i<40&&played?.eval)?played.eval:resultPositionEval;
-      const pb=whiteWinProb(eb),pa=whiteWinProb(qualityAfter);
-      let probLoss=(pb==null||pa==null)?null:Math.max(0,mover==='w'?pb-pa:pa-pb);
-      const inBook=!!DB[e.fen]?.moves?.[e.san];
-      const bestUci=before?.best||null;
+      const before=posResults[i],after=posResults[i+1],played=playedResults[i],mover=parseFen(e.fen).turn;
+      const eb=before?.eval||null,resultPositionEval=after?.eval||null,qualityAfter=played?.eval||resultPositionEval;
+      const displayAfter=(i<40&&played?.eval)?played.eval:resultPositionEval,pb=whiteWinProb(eb),pa=whiteWinProb(qualityAfter);
+      const probLoss=(pb==null||pa==null)?null:Math.max(0,mover==='w'?pb-pa:pa-pb),inBook=!!DB[e.fen]?.moves?.[e.san],bestUci=before?.best||null;
       let c=classifyMove({entry:e,beforeFen:REVIEW_FENS[i],afterFen:REVIEW_FENS[i+1],bestUci,beforeEval:eb,afterEval:qualityAfter,probLoss,inBook,beforeInfo:before?.info});
-
-      if(inBook&&i<12&&['Mistake','Miss','Blunder'].includes(c.label)&&!(probLoss!=null&&probLoss>.30)&&qualityAfter?.kind!=='mate'){
-        c={label:'Good',...MOVE_CLASS_META.Good};
-      }
+      if(inBook&&i<16&&probLoss!=null&&probLoss<=.035&&!['Best','Great','Brilliant','Checkmate','Forced'].includes(c.label))c={label:'Good',...MOVE_CLASS_META.Good};
+      if(inBook&&i<12&&['Mistake','Miss','Blunder'].includes(c.label)&&!(probLoss!=null&&probLoss>.25)&&qualityAfter?.kind!=='mate')c={label:'Good',...MOVE_CLASS_META.Good};
       const bestSan=bestUci?uci2san(e.fen,bestUci):'';
       let explanation=reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,probLoss,true,c.label,i);
-      explanation+=reviewStabilityNote(qualityAfter,resultPositionEval,i);
-      explanation+=matePerspectiveTransitionNote(eb,displayAfter);
+      if(played)explanation+=' This move received a targeted same-parent verification.';
+      explanation+=reviewStabilityNote(qualityAfter,resultPositionEval,i);explanation+=matePerspectiveTransitionNote(eb,displayAfter);
       return{grade:c.label,icon:c.icon,cls:c.cls,inBook,evalAfter:displayAfter,bestSan,probLoss,explanation,sameParent:!!played};
     });
-    if(eng)eng.textContent='Stockfish complete';
+    if(eng)eng.textContent=(REVIEW_MODE==='fast'?'Fast':'Deep')+' review complete · '+cachedHits+' cached · '+extraChecks+' extra checks';
     renderReviewList();renderReviewDetail();
   }
-
-  function analyzePlayed(j){
-    const limit=Math.min(BOT_LOG.length,40); // through move 20
-    if(j>=limit){finalize();return;}
-    const e=BOT_LOG[j];
-    const depth=j<20?15:14;
-    if(eng)eng.textContent='Move accuracy '+Math.round(100*j/Math.max(1,limit))+'%';
-    sfAnalyzePlayedMove(e.fen,e.uci,depth,res=>{
-      if(res){
-        const ev=infoWhiteEval(e.fen,res.info);evaluationPerspectiveSanity(e.fen,res.info,ev);
-        playedResults[j]={eval:ev,info:res.info};
-      }else playedResults[j]=null;
-      analyzePlayed(j+1);
-    });
+  const verifyQueue=[];
+  function buildVerifyQueue(){for(let i=0;i<BOT_LOG.length;i++)if(needsPlayedVerification(i))verifyQueue.push(i);}
+  function verifyNext(qi){
+    if(qi>=verifyQueue.length){finalize();return;}
+    const i=verifyQueue[qi],e=BOT_LOG[i],depth=REVIEW_MODE==='deep'?(i<20?15:14):13;
+    if(analysisCacheGet('played',e.fen,depth,e.uci))cachedHits++;
+    updateProgress('Verifying key moves',qi+1,verifyQueue.length);
+    sfAnalyzePlayedMove(e.fen,e.uci,depth,res=>{if(res){const ev=infoWhiteEval(e.fen,res.info);evaluationPerspectiveSanity(e.fen,res.info,ev);playedResults[i]={eval:ev,info:res.info};}extraChecks++;verifyNext(qi+1);});
   }
-
-  function next(){
-    if(k>=REVIEW_FENS.length){analyzePlayed(0);return;}
-    const fen=REVIEW_FENS[k],idx=k;
-    const tm=parseFen(fen).turn,lm=legalMoves(fen);
-    if(!lm.length){
-      if(inCheck(fen,tm))posResults[idx]={best:null,eval:{kind:'mate',value:tm==='w'?-1:1,terminal:true}};
-      else posResults[idx]={best:null,eval:{kind:'cp',value:0,terminal:true,stalemate:true}};
-      k++;if(eng)eng.textContent='Position analysis '+Math.round(100*k/REVIEW_FENS.length)+'%';next();return;
-    }
-    const reviewDepth=idx<10?18:(idx<20?17:(idx<40?15:14));
-    sfAnalyzePositionDepth(fen,reviewDepth,res=>{
-      if(res){
-        const ev=infoWhiteEval(fen,res.info);evaluationPerspectiveSanity(fen,res.info,ev);
-        posResults[idx]={best:res.best,eval:ev,info:res.info};
-      }else posResults[idx]={best:null,eval:null,info:null};
-      k++;if(eng)eng.textContent='Position analysis '+Math.round(100*k/REVIEW_FENS.length)+'%';next();
-    });
+  function nextPosition(){
+    if(positionIndex>=REVIEW_FENS.length){buildVerifyQueue();verifyNext(0);return;}
+    const fen=REVIEW_FENS[positionIndex],idx=positionIndex,tm=parseFen(fen).turn,lm=legalMoves(fen);
+    if(!lm.length){if(inCheck(fen,tm))posResults[idx]={best:null,eval:{kind:'mate',value:tm==='w'?-1:1,terminal:true}};else posResults[idx]={best:null,eval:{kind:'cp',value:0,terminal:true,stalemate:true}};positionIndex++;updateProgress('Analyzing positions',positionIndex,REVIEW_FENS.length);nextPosition();return;}
+    const depth=REVIEW_MODE==='deep'?(idx<10?18:(idx<20?17:(idx<40?15:14))):(idx<20?13:(idx<50?12:11));
+    if(analysisCacheGet('pos',fen,depth))cachedHits++;
+    updateProgress('Analyzing positions',positionIndex+1,REVIEW_FENS.length);
+    sfAnalyzePositionDepth(fen,depth,res=>{if(res){const ev=infoWhiteEval(fen,res.info);evaluationPerspectiveSanity(fen,res.info,ev);posResults[idx]={best:res.best,eval:ev,info:res.info};}else posResults[idx]={best:null,eval:null,info:null};positionIndex++;nextPosition();});
   }
-  next();
+  nextPosition();
 }
-
 function showReview(){
   if(!BOT_LOG.length){setStat('No game to review.','bad');return;}
   BOT_ACTIVE=false;REVIEW_FENS=buildReviewFens();REVIEW_RESULTS=[];REVIEW_INDEX=0;
@@ -1389,7 +1394,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.12 loaded: same-parent early eval display + persistent-sacrifice Brilliant test + conversion-aware mate grading');
+console.info('ChessTool V2.13 loaded: fast cached review + selective verification + local-engine-ready architecture');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
