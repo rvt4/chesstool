@@ -1113,16 +1113,34 @@ function strategicMoveNotes(entry,beforeFen,afterFen,plyIndex){
 function earlyMiddlegameLesson(entry,beforeFen,afterFen,bestSan,grade,plyIndex){
   const moveNo=Math.floor(plyIndex/2)+1;
   if(moveNo<8||moveNo>20||!['Inaccuracy','Mistake','Miss','Blunder'].includes(grade))return'';
-  const from=entry.uci?.slice(0,2),to=entry.uci?.slice(2,4),moved=from?sqPiece(beforeFen,from):null;
-  const center=['c4','d4','e4','f4','c5','d5','e5','f5'],notes=[];
-  if(moved&&moved.toLowerCase()==='p'&&center.includes(to))notes.push('This central pawn move changes the structure immediately, so check captures, pawn breaks, and newly opened lines before committing.');
-  if(moved&&moved.toLowerCase()==='p'&&to&&['f','g','h'].includes(to[0]))notes.push('This flank pawn move changes squares around the king; make sure the space gain is worth the weakened squares.');
-  if((entry.san||'').includes('x'))notes.push('Calculate the full capture/recapture sequence, not just the first exchange.');
-  if(moved&&['n','b','r','q'].includes(moved.toLowerCase()))notes.push('In the early middlegame, compare piece coordination and ask whether this leaves a piece or pawn loose.');
-  if(bestSan)notes.push('Compare with '+bestSan+': identify the threat, development gain, or structural improvement that move creates.');
-  if(!notes.length)notes.push('Scan checks, captures, and direct threats for both sides, then improve your least-active piece.');
-  return' Middlegame lesson: '+notes.slice(0,2).join(' ');
+  try{
+    const from=entry.uci?.slice(0,2),to=entry.uci?.slice(2,4);
+    let moved=null;
+    if(from){
+      const {bd}=parseFen(beforeFen);
+      const ff=from.charCodeAt(0)-97,fr=+from[1]-1;
+      moved=GP(bd,fr,ff);
+    }
+    const center=['c4','d4','e4','f4','c5','d5','e5','f5'],notes=[];
+    if(moved&&moved.toLowerCase()==='p'&&center.includes(to))
+      notes.push('This central pawn move changes the structure immediately, so check captures, pawn breaks, and newly opened lines before committing.');
+    if(moved&&moved.toLowerCase()==='p'&&to&&['f','g','h'].includes(to[0]))
+      notes.push('This flank pawn move changes squares around the king; make sure the space gain is worth the weakened squares.');
+    if((entry.san||'').includes('x'))
+      notes.push('Calculate the full capture/recapture sequence, not just the first exchange.');
+    if(moved&&['n','b','r','q'].includes(moved.toLowerCase()))
+      notes.push('In the early middlegame, compare piece coordination and ask whether this leaves a piece or pawn loose.');
+    if(bestSan)
+      notes.push('Compare with '+bestSan+': identify the threat, development gain, or structural improvement that move creates.');
+    if(!notes.length)
+      notes.push('Scan checks, captures, and direct threats for both sides, then improve your least-active piece.');
+    return' Middlegame lesson: '+notes.slice(0,2).join(' ');
+  }catch(err){
+    console.warn('Middlegame lesson skipped',err);
+    return'';
+  }
 }
+
 function reviewExplanation(entry,beforeFen,afterFen,bestSan,probLoss,engineOK,classification='',plyIndex=0){
   const {bd,turn}=parseFen(beforeFen);
   const ff=entry.uci.charCodeAt(0)-97,fr=+entry.uci[1]-1,tf=entry.uci.charCodeAt(2)-97,tr=+entry.uci[3]-1;
@@ -1287,34 +1305,87 @@ function analyzeReview(){
     return false;
   }
   let reviewFinalized=false;
+  const wholeReviewWatchdog=setTimeout(()=>{
+    if(!reviewFinalized){
+      console.warn('Whole review watchdog forced finalization');
+      try{SF_CB=null;SF_READY_CB=null;SF?.postMessage('stop');}catch(e){}
+      finalize();
+    }
+  }, REVIEW_MODE==='deep'?90000:60000);
   function finalize(){
     if(reviewFinalized)return;
     reviewFinalized=true;
+    clearTimeout(wholeReviewWatchdog);
     if(eng)eng.textContent='Finalizing review…';
-    REVIEW_RESULTS=BOT_LOG.map((e,i)=>{
-      const before=posResults[i],after=posResults[i+1],played=playedResults[i],mover=parseFen(e.fen).turn;
-      const eb=before?.eval||null,resultPositionEval=after?.eval||null,qualityAfter=played?.eval||resultPositionEval;
-      const displayAfter=(i<40&&played?.eval)?played.eval:resultPositionEval,pb=whiteWinProb(eb),pa=whiteWinProb(qualityAfter);
-      const probLoss=(pb==null||pa==null)?null:Math.max(0,mover==='w'?pb-pa:pa-pb),inBook=!!DB[e.fen]?.moves?.[e.san],bestUci=before?.best||null;
-      let c=classifyMove({entry:e,beforeFen:REVIEW_FENS[i],afterFen:REVIEW_FENS[i+1],bestUci,beforeEval:eb,afterEval:qualityAfter,probLoss,inBook,beforeInfo:before?.info});
-      const finalFen=REVIEW_FENS[i+1],finalTurn=parseFen(finalFen).turn;
-      if(!legalMoves(finalFen).length&&inCheck(finalFen,finalTurn))
-        c={label:'Checkmate',...MOVE_CLASS_META.Checkmate};
-      // Tiny engine preferences between sound repertoire moves are not opening mistakes.
-      if(inBook&&i<20&&qualityAfter?.kind!=='mate'){
-        if(probLoss==null||probLoss<=.065){
-          if(!['Best','Great','Brilliant','Checkmate','Forced','Excellent'].includes(c.label))c={label:'Good',...MOVE_CLASS_META.Good};
-        }else if(probLoss<=.11&&['Mistake','Miss','Blunder'].includes(c.label))c={label:'Inaccuracy',...MOVE_CLASS_META.Inaccuracy};
+
+    try{
+      REVIEW_RESULTS=BOT_LOG.map((e,i)=>{
+        try{
+          const before=posResults[i],after=posResults[i+1],played=playedResults[i],mover=parseFen(e.fen).turn;
+          const eb=before?.eval||null,resultPositionEval=after?.eval||null,qualityAfter=played?.eval||resultPositionEval;
+          const displayAfter=(i<40&&played?.eval)?played.eval:resultPositionEval,pb=whiteWinProb(eb),pa=whiteWinProb(qualityAfter);
+          const probLoss=(pb==null||pa==null)?null:Math.max(0,mover==='w'?pb-pa:pa-pb),inBook=!!DB[e.fen]?.moves?.[e.san],bestUci=before?.best||null;
+
+          let c=classifyMove({entry:e,beforeFen:REVIEW_FENS[i],afterFen:REVIEW_FENS[i+1],bestUci,beforeEval:eb,afterEval:qualityAfter,probLoss,inBook,beforeInfo:before?.info});
+
+          const finalFen=REVIEW_FENS[i+1],finalTurn=parseFen(finalFen).turn;
+          if(!legalMoves(finalFen).length&&inCheck(finalFen,finalTurn))
+            c={label:'Checkmate',...MOVE_CLASS_META.Checkmate};
+
+          if(inBook&&i<20&&qualityAfter?.kind!=='mate'){
+            if(probLoss==null||probLoss<=.065){
+              if(!['Best','Great','Brilliant','Checkmate','Forced','Excellent'].includes(c.label))
+                c={label:'Good',...MOVE_CLASS_META.Good};
+            }else if(probLoss<=.11&&['Mistake','Miss','Blunder'].includes(c.label)){
+              c={label:'Inaccuracy',...MOVE_CLASS_META.Inaccuracy};
+            }
+          }
+
+          const bestSan=bestUci&&isLegalEngineMove(e.fen,bestUci)?uci2san(e.fen,bestUci):'';
+          let explanation='';
+          try{
+            explanation=reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,probLoss,true,c.label,i);
+          }catch(err){
+            console.warn('Base explanation failed for move',i,e.san,err);
+            explanation='Move analysis completed, but the detailed explanation could not be generated.';
+          }
+          explanation+=earlyMiddlegameLesson(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,c.label,i);
+          if(played)explanation+=' This move received a targeted same-parent verification.';
+          explanation+=reviewStabilityNote(qualityAfter,resultPositionEval,i);
+          explanation+=matePerspectiveTransitionNote(eb,displayAfter);
+
+          return{grade:c.label,icon:c.icon,cls:c.cls,inBook,evalAfter:displayAfter,bestSan,probLoss,explanation,sameParent:!!played};
+        }catch(err){
+          console.error('Review move finalization failed',i,e?.san,err);
+          const inBook=!!DB[e?.fen]?.moves?.[e?.san];
+          const after=posResults[i+1]?.eval||null;
+          return{
+            grade:'Not analyzed',icon:'…',cls:'rn',inBook,evalAfter:after,bestSan:'',
+            probLoss:null,
+            explanation:'This move could not be fully classified because a local review step failed. The rest of the game review is still available.',
+            sameParent:false
+          };
+        }
+      });
+
+      if(eng)eng.textContent=(REVIEW_MODE==='fast'?'Fast':'Deep')+' review complete · '+cachedHits+' cached · '+extraChecks+' extra checks';
+      renderReviewList();
+      renderReviewDetail();
+    }catch(err){
+      console.error('Review finalization failed',err);
+      if(eng)eng.textContent='Review completed with partial analysis';
+      // Last-resort render so the UI can never remain stuck on "Finalizing".
+      if(!REVIEW_RESULTS.length){
+        REVIEW_RESULTS=BOT_LOG.map((e,i)=>({
+          grade:'Not analyzed',icon:'…',cls:'rn',
+          inBook:!!DB[e.fen]?.moves?.[e.san],
+          evalAfter:posResults[i+1]?.eval||null,
+          bestSan:'',
+          explanation:'Detailed classification was unavailable, but the game can still be replayed move by move.'
+        }));
       }
-      const bestSan=bestUci?uci2san(e.fen,bestUci):'';
-      let explanation=reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,probLoss,true,c.label,i);
-      explanation+=earlyMiddlegameLesson(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,c.label,i);
-      if(played)explanation+=' This move received a targeted same-parent verification.';
-      explanation+=reviewStabilityNote(qualityAfter,resultPositionEval,i);explanation+=matePerspectiveTransitionNote(eb,displayAfter);
-      return{grade:c.label,icon:c.icon,cls:c.cls,inBook,evalAfter:displayAfter,bestSan,probLoss,explanation,sameParent:!!played};
-    });
-    if(eng)eng.textContent=(REVIEW_MODE==='fast'?'Fast':'Deep')+' review complete · '+cachedHits+' cached · '+extraChecks+' extra checks';
-    renderReviewList();renderReviewDetail();
+      try{renderReviewList();renderReviewDetail();}catch(renderErr){console.error('Fallback review render failed',renderErr);}
+    }
   }
   const verifyQueue=[];
   function buildVerifyQueue(){
@@ -1472,7 +1543,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.15 loaded: terminal-safe review verification + queue watchdog + guaranteed finalization');
+console.info('ChessTool V2.16 loaded: crash-safe finalization + self-contained coaching + whole-review watchdog');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
