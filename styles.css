@@ -193,3 +193,16 @@ nav{display:flex;gap:5px;flex-wrap:wrap}
 @media(max-width:800px){.reviewmodes{position:sticky;top:0;background:var(--surf);z-index:2;padding:3px 0}}
 
 .mc-book{color:var(--acc)} .mc-book .moveicon{background:rgba(180,145,80,.14)}
+
+/* V2.19 Mistake Trends */
+.trendstats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}
+.trendstats span{border:1px solid var(--bdr);border-radius:5px;padding:7px;text-align:center;font-size:.68rem;color:var(--muted)}
+.trendstats b{display:block;font-size:.95rem;color:var(--txt)}
+.trendsub{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:9px 0 5px}
+.trendrow,.recenterr{display:flex;justify-content:space-between;gap:8px;border-top:1px solid var(--bdr);padding:7px 0;font-size:.73rem}
+.trendrow:first-of-type{border-top:0}
+.trendrow b{color:var(--acc)}
+.recenterr{flex-direction:column;gap:2px}.recenterr span{color:var(--muted);font-size:.68rem}
+.trendhint{margin-top:9px;padding:8px;border-radius:5px;background:var(--mbg);font-size:.72rem;line-height:1.45}
+.trendempty{font-size:.73rem;color:var(--muted);line-height:1.5}
+.mini{border:1px solid var(--bdr);background:transparent;color:var(--muted);border-radius:4px;padding:3px 7px;font-size:.65rem}

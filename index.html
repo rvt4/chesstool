@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChessTool V2.18</title>
+<title>ChessTool V2.19</title>
 <link rel="stylesheet" href="styles.css">
 
 </head>
 <body>
 <header>
-  <div class="logo">♟ ChessTool <small>English · Caro-Kann · V2.18</small></div>
+  <div class="logo">♟ ChessTool <small>English · Caro-Kann · V2.19</small></div>
   <nav>
     <button class="nb on" onclick="setMode('drill')">Train</button>
     <button class="nb" onclick="setMode('bot')">vs Bot</button>
@@ -137,6 +137,12 @@
           <button class="skb on" id="bc0" onclick="setBotColor('white')">White</button>
           <button class="skb"    id="bc1" onclick="setBotColor('black')">Black</button>
         </div>
+      </div>
+    </div>
+    <div class="card hidden" id="trendcard">
+      <div class="ch"><span>Mistake Trends</span><button class="mini" onclick="clearMistakeHistory()">Clear</button></div>
+      <div class="cb2" id="mistaketrends">
+        <div class="trendempty">Complete a Game Review and your recurring mistakes will appear here.</div>
       </div>
     </div>
     <!-- review -->

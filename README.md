@@ -1,46 +1,40 @@
-# ChessTool V2.18
+# ChessTool V2.19
 
-Focused repertoire-label and tactical-training update.
+Repertoire-depth and mistake-pattern release.
 
-## Book moves are just Book moves
-If a move is recognized in your repertoire (including a recognized transposition),
-Game Review now displays:
+## Mistake Trends
+Completed Game Reviews now save only **your** meaningful errors (Inaccuracy, Mistake,
+Miss, Blunder) to browser localStorage.
 
-`📖 Book`
+The Bot screen shows a persistent Mistake Trends card with:
+- games reviewed;
+- total logged errors;
+- serious errors;
+- most frequent mistake categories;
+- five recent mistakes and the engine's preferred move;
+- a current focus habit based on the most common category.
 
-It does **not** also call the move Best / Excellent / Good / Inaccuracy.
+Categories include hanging/loose pieces, exchange calculation, king safety, central
+pawn decisions, queen tempi, piece coordination, missed tactics, and missed forced mate.
 
-The evaluation can still be shown for context, but ChessTool no longer teaches tiny
-engine preferences as a second judgment on a move you deliberately chose for your
-repertoire.
+Re-running Fast/Deep on the same game replaces that game's log instead of double-counting it.
+History is capped at 60 games and can be cleared from the card.
 
-A transposed book move is still identified as a transposition in the review UI and
-explanation.
+## Deeper repertoire
+Four additional common branches were added:
+- English vs ...e6 — Exchange/QGD structure
+- English Symmetrical — ...e6 / central break
+- Caro-Kann Exchange — Nf3/Bd3 setup
+- Caro-Kann Advance — 4.Nc3 / g4
 
-## Stronger 1400+ tactical punishment
-The rated bot still uses humanized candidate selection for ordinary play.
+These extend training farther into the opening-to-middlegame transition and map into
+the existing strategic plan modules.
 
-The full-strength tactical scan now overrides that selection more reliably when the
-best move:
-- directly captures a loose minor piece, rook, or queen;
-- wins a pawn with a clearly large tactical edge;
-- gives a forcing check with a substantial evaluation advantage;
-- is a short forced mate (existing behavior).
+## Missed forced mate explanation
+When a move receives `ⓧ Miss` because it gives up a forced mate, the explanation now
+states the previous mate distance, the preferred continuation when available, and that
+the forced mate was lost even if the position remains winning.
 
-This is designed to stop a 1400+ bot from repeatedly ignoring obvious piece-winning
-tactics while preserving realistic positional inaccuracies.
-
-## More concrete Mistake / Miss / Blunder explanations
-For large errors, Game Review now examines the opponent's best reply and principal
-variation.
-
-It can show:
-- the exact immediate punishment;
-- when the piece you just moved can simply be captured;
-- when a forcing capture wins a piece or more;
-- when the punishment begins with check;
-- a short engine punishment line (up to four plies);
-- a warning about an attacked loose piece.
-
-All V2.17 Fast Review reliability, caching, transposition-aware repertoire,
-middlegame coaching, evaluation cap, Brilliant verification, and mate grading remain.
+Everything from V2.18 remains, including Book-only repertoire labels, transposition
+recognition, Fast Review reliability/caching, tactical bot overrides, concrete punishment
+lines, Brilliant verification, mate grading, and middlegame coaching.
