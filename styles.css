@@ -152,3 +152,34 @@ nav{display:flex;gap:5px;flex-wrap:wrap}
   .reviewdock .reviewdetail{font-size:.76rem;line-height:1.4;max-height:112px;padding:8px}
   .reviewdock .reviewnav .cb{padding:7px 6px}
 }
+
+
+/* V2.6 unified trainer + move classifications */
+.moveclass{display:inline-flex;align-items:center;gap:4px;font-weight:700}
+.moveicon{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 3px;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:.72rem}
+.mc-brilliant{color:#27c7b8}.mc-brilliant .moveicon{background:rgba(39,199,184,.16)}
+.mc-great{color:#74b9ff}.mc-great .moveicon{background:rgba(116,185,255,.15)}
+.mc-best{color:#65c466}.mc-best .moveicon{background:rgba(101,196,102,.15)}
+.mc-excellent{color:#79b879}.mc-excellent .moveicon{background:rgba(121,184,121,.12)}
+.mc-good{color:#9db19d}.mc-good .moveicon{background:rgba(157,177,157,.10)}
+.mc-inaccuracy{color:#e0b45c}.mc-inaccuracy .moveicon{background:rgba(224,180,92,.14)}
+.mc-mistake{color:#e38a55}.mc-mistake .moveicon{background:rgba(227,138,85,.14)}
+.mc-miss{color:#e26ec4}.mc-miss .moveicon{background:rgba(226,110,196,.14)}
+.mc-blunder{color:#e45f5f}.mc-blunder .moveicon{background:rgba(228,95,95,.15)}
+.mc-forced{color:#a8a8b0}.mc-forced .moveicon{background:rgba(168,168,176,.12)}
+.mc-mate{color:#a976e8}.mc-mate .moveicon{background:rgba(169,118,232,.16)}
+.booktag{display:inline-block;margin-left:5px;padding:2px 5px;border:1px solid var(--bdr);border-radius:4px;color:var(--acc);font-size:.67rem;white-space:nowrap}
+.reviewlegend{margin:8px 0 10px;border:1px solid var(--bdr);border-radius:5px;background:var(--mbg)}
+.reviewlegend summary{cursor:pointer;padding:8px 9px;color:var(--acc);font-size:.76rem;font-weight:600}
+.legendgrid{display:grid;grid-template-columns:1fr;gap:6px;padding:0 9px 9px;font-size:.72rem;line-height:1.4;color:var(--muted)}
+.legendgrid b{color:var(--txt)}
+#midbotcard .skrow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
+#tree .studywhy{margin-top:8px}
+
+@media(max-width:800px){
+  nav{grid-template-columns:repeat(2,1fr)}
+  .reviewrow{line-height:1.55}
+  .moveclass{margin-top:2px}
+  .booktag{font-size:.62rem}
+  #midbotcard .skb{padding:7px 2px;font-size:.7rem}
+}

@@ -3,17 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChessTool V2.5</title>
+<title>ChessTool V2.6</title>
 <link rel="stylesheet" href="styles.css">
 
 </head>
 <body>
 <header>
-  <div class="logo">♟ ChessTool <small>English · Caro-Kann · V2.5</small></div>
+  <div class="logo">♟ ChessTool <small>English · Caro-Kann · V2.6</small></div>
   <nav>
-    <button class="nb on"  onclick="setMode('drill')">Train</button>
-    <button class="nb"     onclick="setMode('explorer')">Study</button>
-    <button class="nb"     onclick="setMode('bot')">vs Bot</button>
+    <button class="nb on" onclick="setMode('drill')">Train</button>
+    <button class="nb" onclick="setMode('bot')">vs Bot</button>
   </nav>
 </header>
 <div class="app">
@@ -36,7 +35,7 @@
     </div>
     <div class="playhud" id="playhud">
       <div class="playhudtop"><span id="hudopening">Starting Position</span><span id="hudeco"></span></div>
-      <div id="hudmsg">Choose Train, Study, or vs Bot.</div>
+      <div id="hudmsg">Choose Train or vs Bot.</div>
     </div>
     <div id="reviewdock" class="reviewdock hidden">
       <div class="reviewnav">
@@ -81,10 +80,24 @@
         <div id="linesel"></div>
       </div>
     </div>
-    <!-- explorer tree -->
-    <div class="card hidden" id="expcard">
-      <div class="ch">Study Repertoire · answers shown</div>
-      <div class="cb2"><div id="tree"></div></div>
+    <div class="card" id="expcard">
+      <div class="ch">Training Coach</div>
+      <div class="cb2">
+        <div id="tree"><span class="tlbl">Start a session. Use Hint whenever you want the repertoire answer.</span></div>
+        <div id="studyplan"></div>
+      </div>
+    </div>
+    <div class="card" id="midbotcard">
+      <div class="ch">Middlegame Opponent</div>
+      <div class="cb2">
+        <div style="font-size:.77rem;color:var(--muted);margin-bottom:7px">Approximate playing strength after the opening. Your moves are still checked by full-strength Stockfish.</div>
+        <div class="skrow">
+          <button class="skb" id="ms0" onclick="setMidSkill(1400)">1400</button>
+          <button class="skb on" id="ms1" onclick="setMidSkill(1600)">1600</button>
+          <button class="skb" id="ms2" onclick="setMidSkill(1800)">1800</button>
+          <button class="skb" id="ms3" onclick="setMidSkill(2000)">2000</button>
+        </div>
+      </div>
     </div>
     <!-- quiz -->
     <div class="card hidden" id="quizcard">
@@ -135,6 +148,23 @@
           <button class="cb" onclick="reviewStep(1)">Next →</button>
         </div>
         <div id="reviewdetail" class="reviewdetail">Tap a move below or use Previous / Next.</div>
+        <details class="reviewlegend">
+          <summary>Move classifications</summary>
+          <div class="legendgrid">
+            <span><b>‼ Brilliant</b> — exceptional best move with a sound sacrifice</span>
+            <span><b>! Great</b> — critical best move in a tactical or high-stakes position</span>
+            <span><b>★ Best</b> — Stockfish's top move</span>
+            <span><b>✓ Excellent</b> — essentially as strong as best</span>
+            <span><b>● Good</b> — solid with only a small loss</span>
+            <span><b>?! Inaccuracy</b> — noticeable loss of accuracy</span>
+            <span><b>? Mistake</b> — significant loss of winning/drawing chances</span>
+            <span><b>ⓧ Miss</b> — missed a major win or forced mate</span>
+            <span><b>?? Blunder</b> — major change in the result/evaluation</span>
+            <span><b>□ Forced</b> — essentially no meaningful alternative</span>
+            <span><b># Checkmate</b> — ends the game</span>
+            <span><b>📖 Repertoire</b> — separate tag for your stored opening line</span>
+          </div>
+        </details>
         <div id="revlist"></div>
       </div>
     </div>

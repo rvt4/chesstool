@@ -1,28 +1,50 @@
-# ChessTool V2.5
+# ChessTool V2.6
 
-Personal English Opening + Caro-Kann trainer focused on opening recall and the early middlegame.
+Personal English Opening + Caro-Kann trainer built around one continuous workflow:
 
-## V2.5
+**opening repertoire → early middlegame plan → coached practice → full-game review**
 
-- Fixed Stockfish review synchronization. Each position now waits for `readyok` before the next depth-14 search begins, preventing an old `bestmove` or score from contaminating the next position.
-- Review controls and the detailed move explanation now appear in a dedicated panel directly below the board, with Previous / Next controls kept visible on mobile.
-- Checkmate and stalemate are explicitly detected after every bot move. Checkmate now produces a board overlay with the result and a Review Game button.
-- The final mating move is labeled Checkmate in review instead of Not analyzed.
-- Train and Study now both transition automatically from the end of the opening into a Middlegame Lab for roughly 10 additional moves.
-- Study shows the full strategic blueprint. Train hides it initially so you must recall the plan; Hint reveals it.
-- Every one of the 20 current repertoire branches maps to one of 18 validated middlegame structures.
-- End-of-line detection happens before wrong-move handling, removing the blank “next move is .” behavior.
-- Mate evaluations are shown as M# / -M#, and positive numerical evaluation always favors White.
+## Main training mode
 
-## Modes
+There is now one Train mode instead of separate Train and Study modes.
 
-### Train
-Recall opening moves without answers shown. Wrong legal moves are explained and reset. At the end of theory, continue into Middlegame Recall.
+### Opening phase
+- Opponent autoplays random continuations from the selected English or Caro-Kann lines.
+- You may make any legal move.
+- Correct repertoire moves continue.
+- Wrong moves are explained and the position resets so you can retry.
+- Hint reveals the expected repertoire move.
 
-### Study
-Recommended opening moves and explanations are shown. At the end of theory, continue from the exact final opening position with the full middlegame blueprint visible.
+### Middlegame phase
+- When the stored opening line ends, training automatically continues from that exact position.
+- The relevant strategic blueprint stays visible: goal, pawn breaks, piece placement, opponent plan, trigger, and common mistake.
+- Choose an approximate opponent level: 1400 / 1600 / 1800 / 2000.
+- The opponent uses limited-strength Stockfish.
+- Your moves are independently checked by full-strength Stockfish at depth 13.
+- Every move receives Best / Excellent / Good / Inaccuracy / Mistake / Miss / Blunder-style feedback plus the engine's preferred move.
+- Inaccuracy or worse resets the position so you can find a stronger move.
+- Hint reveals Stockfish's current best move.
 
-### vs Bot
-Play a complete game and review it move by move with Stockfish-backed analysis when the browser engine is available.
+## Game Review
+- Stockfish depth-14 analysis with retry and synchronized searches.
+- Classification icons:
+  - ‼ Brilliant
+  - ! Great
+  - ★ Best
+  - ✓ Excellent
+  - ● Good
+  - ?! Inaccuracy
+  - ? Mistake
+  - ⓧ Miss
+  - ?? Blunder
+  - □ Forced
+  - # Checkmate
+- 📖 Repertoire is displayed as a separate opening tag.
+- Move definitions are built into an expandable legend.
+- Review board, Previous/Next controls, best move, evaluation and explanation remain directly under the board on mobile.
+- Mate scores display as M# / -M# and the mating move is labeled Checkmate.
+
+## Data validation
+All 20 repertoire branches and all 18 mapped middlegame structures validate through ChessTool's legal-move engine.
 
 GitHub Pages: deploy `main` from `/ (root)`.
