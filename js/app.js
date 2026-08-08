@@ -370,7 +370,7 @@ function prepareMiddlegameTurn(){
   sfAnalyzePositionDepth(FEN,13,res=>{
     MID_ANALYZING=false;PRACTICE_LOCK=false;
     if(!SESSION_STARTED||STUDY_PHASE!=='middlegame')return;
-    MID_PRE_ANALYSIS=res?{best:res.best,eval:infoWhiteEval(FEN,res.info)}:null;
+    MID_PRE_ANALYSIS=res?{best:res.best,eval:infoWhiteEval(FEN,res.info),info:res.info}:null;
     const bestSan=MID_PRE_ANALYSIS?.best?uci2san(FEN,MID_PRE_ANALYSIS.best):'';
     setStat('Your move — find the strongest continuation.','info');
     setCoach('Middlegame: apply the blueprint and calculate. '+(bestSan?'Your move will be compared with full-strength Stockfish.':'Engine feedback will be given when available.'));
@@ -413,7 +413,7 @@ function handleStudyMiddlegameMove(uci){
     const loss=(pb==null||pa==null)?null:Math.max(0,mover==='w'?pb-pa:pa-pb);
     const bestUci=MID_PRE_ANALYSIS?.best||null;
     const bestSan=bestUci?uci2san(beforeFen,bestUci):'';
-    const grade=classifyMove({entry:{uci,san},beforeFen,afterFen,bestUci,beforeEval,afterEval,probLoss:loss,inBook:false});
+    const grade=classifyMove({entry:{uci,san},beforeFen,afterFen,bestUci,beforeEval,afterEval,probLoss:loss,inBook:false,beforeInfo:MID_PRE_ANALYSIS?.info});
     const explanation=liveMoveExplanation(san,grade,bestSan,loss,STUDY_PLAN);
     MID_FEEDBACK=grade.icon+' <strong>'+grade.label+'</strong> — '+explanation;
     setStat(grade.icon+' '+grade.label+': '+san,'info');setCoach(stripHtml(MID_FEEDBACK));
@@ -584,7 +584,10 @@ function localBestMove(fen,skill){
 function sfBestMove(fen,skill,cb){
   const fallback=()=>setTimeout(()=>cb(localBestMove(fen,skill)),180);
   if(!SF||SF_FAILED){fallback();return;}
-  SF_CB=(move,info)=>cb(move||localBestMove(fen,skill),info);
+  SF_CB=(move,info)=>{
+    const safe=isLegalEngineMove(fen,move)?move:localBestMove(fen,skill);
+    cb(safe,info);
+  };
   const mt=skill<=4?650:skill<=10?1100:skill<=16?1700:2600;
   try{
     SF.postMessage('setoption name UCI_LimitStrength value false');
@@ -604,7 +607,10 @@ function sfBestMove(fen,skill,cb){
 function sfBestMoveRated(fen,rating,cb){
   const fallback=()=>setTimeout(()=>cb(localBestMove(fen,midSkillLevel())),180);
   if(!SF||SF_FAILED){fallback();return;}
-  SF_CB=(move,info)=>cb(move||localBestMove(fen,midSkillLevel()),info);
+  SF_CB=(move,info)=>{
+    const safe=isLegalEngineMove(fen,move)?move:localBestMove(fen,midSkillLevel());
+    cb(safe,info);
+  };
   const mt=rating<=1400?650:rating<=1600?900:rating<=1800?1200:1550;
   try{
     SF.postMessage('setoption name UCI_LimitStrength value true');
@@ -708,6 +714,13 @@ function endBot(){
   if(ov){document.getElementById('gameovertitle').textContent=title;document.getElementById('gameovertext').textContent=result;ov.classList.remove('hidden');}
 }
 
+function isLegalEngineMove(fen,uci){
+  return !!uci&&legalMoves(fen).includes(uci);
+}
+function engineResultValid(fen,move,info){
+  return isLegalEngineMove(fen,move)&&!!info;
+}
+
 function sfAnalyzePositionDepth(fen,depth,cb,retry=0){
   if(!SF||SF_FAILED){cb(null);return;}
   let finished=false;
@@ -723,7 +736,13 @@ function sfAnalyzePositionDepth(fen,depth,cb,retry=0){
     SF_READY_CB=()=>{
       if(finished)return;
       SF_LAST_INFO=null;
-      SF_CB=(move,info)=>finish(move&&info?{best:move,info}:null);
+      SF_CB=(move,info)=>{
+        if(!engineResultValid(fen,move,info)){
+          console.warn('Discarding illegal/stale engine move for FEN',move,fen);
+          finish(null);return;
+        }
+        finish({best:move,info});
+      };
       SF.postMessage('setoption name UCI_LimitStrength value false');
       SF.postMessage('setoption name Skill Level value 20');
       SF.postMessage('position fen '+fen);
@@ -780,12 +799,27 @@ function isSacrificeCandidate(entry,beforeFen,afterFen){
   const ff=entry.uci.charCodeAt(0)-97,fr=+entry.uci[1]-1,tf=entry.uci.charCodeAt(2)-97,tr=+entry.uci[3]-1;
   const pc=GP(bd,fr,ff),cap=GP(bd,tr,tf);
   if(!pc||pc.toUpperCase()==='P'||pc.toUpperCase()==='K')return false;
+  // A "brilliant" sacrifice should actually offer meaningful material, not
+  // merely put a piece on an attacked square after an equal-value capture.
   const pv=materialValue(pc),cv=materialValue(cap);
-  if(pv-cv<180)return false;
+  if(pv-cv<200)return false;
   const {bd:abd}=parseFen(afterFen);
   return attacked(abd,tr,tf,turn==='w'?'b':'w');
 }
-function classifyMove({entry,beforeFen,afterFen,bestUci,beforeEval,afterEval,probLoss,inBook}){
+function pvAcceptsSacrifice(entry,beforeFen,pv){
+  if(!Array.isArray(pv)||pv.length<2||pv[0]!==entry.uci)return false;
+  const reply=pv[1];
+  if(!isLegalEngineMove(applyUci(beforeFen,entry.uci),reply))return false;
+  // The opponent's PV reply must actually capture the offered piece on its
+  // destination square. Otherwise the material wasn't really sacrificed.
+  return reply.slice(2,4)===entry.uci.slice(2,4);
+}
+function mateForSide(ev,side){
+  if(!ev||ev.kind!=='mate')return 0;
+  return side==='w'?ev.value:-ev.value; // positive = side mates, negative = side is mated
+}
+
+function classifyMove({entry,beforeFen,afterFen,bestUci,beforeEval,afterEval,probLoss,inBook,beforeInfo}){
   const mover=parseFen(beforeFen).turn;
   const legalCount=legalMoves(beforeFen).length;
   const mateAfter=afterEval?.terminal&&!afterEval?.stalemate;
@@ -795,21 +829,32 @@ function classifyMove({entry,beforeFen,afterFen,bestUci,beforeEval,afterEval,pro
 
   const best=!!bestUci&&entry.uci===bestUci;
   const beforeP=moverWinProb(beforeEval,mover),afterP=moverWinProb(afterEval,mover);
-  const beforeMate=beforeEval?.kind==='mate'&&((mover==='w'&&beforeEval.value>0)||(mover==='b'&&beforeEval.value<0));
-  const afterMate=afterEval?.kind==='mate'&&((mover==='w'&&afterEval.value>0)||(mover==='b'&&afterEval.value<0));
+  const bm=mateForSide(beforeEval,mover),am=mateForSide(afterEval,mover);
 
-  // Miss: a major tactical win or forced mate was available and the move lets it go.
+  // Forced-mate handling. If the mover is already being mated, distinguish
+  // the engine's best resistance from moves that shorten the mate.
+  if(bm<0){
+    if(am>=0)return{label:'Great',...MOVE_CLASS_META.Great}; // escaped the forced mate
+    if(best)return{label:'Forced',...MOVE_CLASS_META.Forced};
+    // Smaller absolute mate distance after the move means mate arrives sooner.
+    if(am<0&&Math.abs(am)<Math.abs(bm))return{label:'Blunder',...MOVE_CLASS_META.Blunder};
+    return{label:'Good',...MOVE_CLASS_META.Good};
+  }
+
+  const beforeMate=bm>0,afterMate=am>0;
+  // Miss: a forced mate or major winning chance was thrown away.
   if((beforeMate&&!afterMate)||(beforeP!=null&&afterP!=null&&beforeP>=.82&&afterP<.62&&probLoss>=.16))
     return{label:'Miss',...MOVE_CLASS_META.Miss};
 
-  // Brilliant is deliberately conservative: engine-best, tactically sound, and
-  // offers a materially more valuable non-pawn piece to capture.
-  if(best&&isSacrificeCandidate(entry,beforeFen,afterFen)&&probLoss<=.01)
+  // Brilliant is intentionally rare. The engine must choose it first, the move
+  // must offer real material, and Stockfish's principal variation must show the
+  // opponent actually accepting that offer.
+  const pv=beforeInfo?.pv||[];
+  if(best&&probLoss<=.01&&isSacrificeCandidate(entry,beforeFen,afterFen)&&pvAcceptsSacrifice(entry,beforeFen,pv))
     return{label:'Brilliant',...MOVE_CLASS_META.Brilliant};
 
-  // Great: engine-best in a genuinely critical/mating position.
-  const critical=beforeEval?.kind==='mate';
-  if(best&&critical)return{label:'Great',...MOVE_CLASS_META.Great};
+  // Great: best move that preserves or executes a forced mating sequence.
+  if(best&&(beforeMate||afterMate))return{label:'Great',...MOVE_CLASS_META.Great};
   if(best)return{label:'Best',...MOVE_CLASS_META.Best};
   if(probLoss<=.02)return{label:'Excellent',...MOVE_CLASS_META.Excellent};
   if(probLoss<=.05)return{label:'Good',...MOVE_CLASS_META.Good};
@@ -847,7 +892,7 @@ function reviewExplanation(entry,beforeFen,afterFen,bestSan,probLoss,engineOK,cl
     Mistake:'A significant deterioration in the position.',
     Miss:'A major winning opportunity or forced mate was available and was missed.',
     Blunder:'A major swing in the expected result of the game.',
-    Forced:'There was essentially no alternative legal move.',
+    Forced:'This was the only legal move or the engine’s best resistance in an unavoidable forced-mate sequence.',
     Checkmate:'This move ends the game by checkmate.'
   };
   if(meanings[classification])parts.push(meanings[classification]);
@@ -941,7 +986,7 @@ function analyzeReview(){
         let probLoss=(pb==null||pa==null)?null:Math.max(0,mover==='w'?pb-pa:pa-pb);
         const inBook=!!DB[e.fen]?.moves?.[e.san];
         const bestUci=before?.best||null;
-        let c=classifyMove({entry:e,beforeFen:REVIEW_FENS[i],afterFen:REVIEW_FENS[i+1],bestUci,beforeEval:eb,afterEval:ea,probLoss,inBook});
+        let c=classifyMove({entry:e,beforeFen:REVIEW_FENS[i],afterFen:REVIEW_FENS[i+1],bestUci,beforeEval:eb,afterEval:ea,probLoss,inBook,beforeInfo:before?.info});
 
         // Browser depth can be noisy in the first few opening moves. A stored,
         // legal repertoire move is never called a Blunder/Mistake solely from
@@ -964,7 +1009,7 @@ function analyzeReview(){
       k++;if(eng)eng.textContent='Stockfish '+Math.round(100*k/REVIEW_FENS.length)+'%';next();return;
     }
     sfAnalyzePositionDepth(fen,14,res=>{
-      posResults[idx]=res?{best:res.best,eval:infoWhiteEval(fen,res.info)}:{best:null,eval:null};
+      posResults[idx]=res?{best:res.best,eval:infoWhiteEval(fen,res.info),info:res.info}:{best:null,eval:null,info:null};
       k++;if(eng)eng.textContent='Stockfish '+Math.round(100*k/REVIEW_FENS.length)+'%';next();
     });
   }
@@ -1069,7 +1114,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.6 loaded: unified training + rated middlegame opponent + live move coaching + richer review classifications');
+console.info('ChessTool V2.7 loaded: legal engine gating + strict brilliant verification + forced-mate-aware grading');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
