@@ -1,44 +1,51 @@
-# ChessTool V2.20
+# ChessTool V2.21
 
-Repertoire-depth and mistake-pattern release.
+Focused Mistake Coach accuracy update.
 
-## Mistake Trends
-Completed Game Reviews now save only **your** meaningful errors (Inaccuracy, Mistake,
-Miss, Blunder) to browser localStorage.
+## Fixed false "King safety / mate threat" trend
+V2.20 searched explanation text for the substring `mate`. That accidentally matched
+words such as `estimated`, causing unrelated mistakes to be dumped into the king-safety
+bucket.
 
-The Bot screen shows a persistent Mistake Trends card with:
-- games reviewed;
-- total logged errors;
-- serious errors;
-- most frequent mistake categories;
-- five recent mistakes and the engine's preferred move;
-- a current focus habit based on the most common category.
+V2.21 only uses actual mate engine states or whole-word mate/checkmate language.
 
-Categories include hanging/loose pieces, exchange calculation, king safety, central
-pawn decisions, queen tempi, piece coordination, missed tactics, and missed forced mate.
+## Smarter categories
+Mistakes are now classified into more specific habits:
+- Missed forced mate
+- King safety / mate threat
+- Hanging / undefended piece
+- Calculation / exchanges
+- Missed opponent threat
+- Missed tactic
+- Premature queen move / tempo
+- Pawn break / central decision
+- Premature attack / pawn weakening
+- Pawn / endgame technique
+- Rook placement / coordination
+- Piece activity / coordination
+- Tactical oversight
+- Decision quality
 
-Re-running Fast/Deep on the same game replaces that game's log instead of double-counting it.
-History is capped at 60 games and can be cleared from the card.
+## Less noise
+Long-term Mistake Trends no longer save every tiny engine inaccuracy.
+- Inaccuracies must cost roughly 0.75 pawns or more to enter the trend log.
+- Mistakes must have a meaningful impact.
+- Book moves are never logged as mistakes.
 
-## Deeper repertoire
-Four additional common branches were added:
-- English vs ...e6 — Exchange/QGD structure
-- English Symmetrical — ...e6 / central break
-- Caro-Kann Exchange — Nf3/Bd3 setup
-- Caro-Kann Advance — 4.Nc3 / g4
+The full Game Review still shows all engine labels; this filter only affects the
+persistent habit tracker.
 
-These extend training farther into the opening-to-middlegame transition and map into
-the existing strategic plan modules.
+## Better severity and focus
+Trend importance is now driven primarily by actual evaluation impact, then adjusted
+for the move label and recency.
 
-## Missed forced mate explanation
-When a move receives `ⓧ Miss` because it gives up a forced mate, the explanation now
-states the previous mate distance, the preferred continuation when available, and that
-the forced mate was lost even if the position remains winning.
+One game-changing blunder should outweigh several small inaccuracies.
 
-Everything from V2.18 remains, including Book-only repertoire labels, transposition
-recognition, Fast Review reliability/caching, tactical bot overrides, concrete punishment
-lines, Brilliant verification, mate grading, and middlegame coaching.
+The Current Focus uses severity × recency rather than raw count alone.
 
+## Existing V2.20 data
+Stored history is re-normalized when displayed so old V2.20 categories do not continue
+to dominate the trends simply because they were saved under the old taxonomy.
 
-## V2.20
-Mistake Coach now weights errors by severity, separates game phases, improves habit classification, and lets you replay saved mistake positions. Existing V2.19 local mistake history remains compatible.
+All V2.20 replay, phase tracking, review engine, bot behavior, Book handling, and
+middlegame training remain unchanged.
