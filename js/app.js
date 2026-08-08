@@ -69,6 +69,102 @@ function repertoireMoveStatus(fen,san){
   return{inBook:false,transposition:false};
 }
 function isRepertoireMove(fen,san){return repertoireMoveStatus(fen,san).inBook;}
+
+// ─── PERSISTENT MISTAKE TRENDS ─────────────────────────────────────────────
+const MISTAKE_LOG_KEY='chesstool_mistake_log_v1';
+const MISTAKE_LOG_MAX_GAMES=60;
+function loadMistakeLog(){
+  try{
+    const x=JSON.parse(localStorage.getItem(MISTAKE_LOG_KEY)||'[]');
+    return Array.isArray(x)?x:[];
+  }catch(e){return[];}
+}
+let MISTAKE_GAMES=loadMistakeLog();
+
+function mistakeCategory(entry,beforeFen,afterFen,grade,explanation,beforeEval,afterEval,plyIndex){
+  const txt=(explanation||'').toLowerCase();
+  const moveNo=Math.floor(plyIndex/2)+1;
+  if(grade==='Miss'&&beforeEval?.kind==='mate'&&afterEval?.kind!=='mate')return'Missed forced mate';
+  if(txt.includes('captures the piece you just moved')||txt.includes('loose piece')||txt.includes('wins a piece'))return'Hanging / loose piece';
+  if(txt.includes('forcing capture')||txt.includes('capture/recapture'))return'Calculation / exchanges';
+  if(txt.includes('with check')||txt.includes('king-side squares')||txt.includes('king safety'))return'King safety';
+  try{
+    const {bd}=parseFen(beforeFen),from=entry.uci.slice(0,2),to=entry.uci.slice(2,4);
+    const ff=from.charCodeAt(0)-97,fr=+from[1]-1,pc=GP(bd,fr,ff);
+    if(pc&&pc.toUpperCase()==='Q'&&moveNo<=15)return'Queen moved too early / tempo';
+    if(pc&&pc.toUpperCase()==='P'&&['c','d','e','f'].includes(to[0])&&moveNo<=20)return'Central pawn decision';
+    if(pc&&pc.toUpperCase()==='P'&&['f','g','h'].includes(to[0]))return'King-side pawn weakening';
+    if(pc&&['N','B','R'].includes(pc.toUpperCase()))return'Piece coordination';
+  }catch(e){}
+  if(grade==='Miss')return'Missed tactic';
+  if(grade==='Blunder')return'Tactical oversight';
+  return'Decision quality';
+}
+function gameFingerprint(){
+  return BOT_LOG.map(e=>e.uci).join('-');
+}
+function reviewedGameResult(){
+  try{
+    const fen=REVIEW_FENS[REVIEW_FENS.length-1]||FEN,turn=parseFen(fen).turn,lm=legalMoves(fen);
+    if(lm.length)return'completed';
+    if(!inCheck(fen,turn))return'draw';
+    const userSide=BOT_GAME_COLOR==='white'?'w':'b';
+    return turn===userSide?'loss':'win';
+  }catch(e){return'completed';}
+}
+function saveMistakeTrends(){
+  if(!BOT_LOG.length||!REVIEW_RESULTS.length)return;
+  const fp=gameFingerprint();
+  const errors=[];
+  BOT_LOG.forEach((e,i)=>{
+    if(e.byBot)return;
+    const r=REVIEW_RESULTS[i];
+    if(!r||!['Inaccuracy','Mistake','Miss','Blunder'].includes(r.grade))return;
+    const before=REVIEW_FENS[i],after=REVIEW_FENS[i+1];
+    errors.push({
+      move:reviewMoveLabel(i),
+      san:e.san,
+      grade:r.grade,
+      category:mistakeCategory(e,before,after,r.grade,r.explanation,r.beforeEval||null,r.qualityAfter||null,i),
+      best:r.bestSan||'',
+      explanation:(r.explanation||'').slice(0,420),
+      ply:i,
+      ts:Date.now()
+    });
+  });
+  const game={id:fp,ts:Date.now(),bot:BOT_LABEL,color:BOT_GAME_COLOR,result:reviewedGameResult(),errors};
+  const existing=MISTAKE_GAMES.findIndex(g=>g.id===fp);
+  if(existing>=0)MISTAKE_GAMES[existing]=game;else MISTAKE_GAMES.push(game);
+  MISTAKE_GAMES=MISTAKE_GAMES.slice(-MISTAKE_LOG_MAX_GAMES);
+  try{localStorage.setItem(MISTAKE_LOG_KEY,JSON.stringify(MISTAKE_GAMES));}catch(e){}
+  renderMistakeTrends();
+}
+function renderMistakeTrends(){
+  const host=document.getElementById('mistaketrends');if(!host)return;
+  const games=MISTAKE_GAMES,all=games.flatMap(g=>(g.errors||[]).map(x=>({...x,gameTs:g.ts,bot:g.bot})));
+  if(!games.length){
+    host.innerHTML='<div class="trendempty">Complete a Game Review and your recurring mistakes will appear here.</div>';
+    return;
+  }
+  const counts={};all.forEach(x=>counts[x.category]=(counts[x.category]||0)+1);
+  const ranked=Object.entries(counts).sort((x,y)=>y[1]-x[1]);
+  const recent=all.slice().sort((x,y)=>(y.ts||y.gameTs)-(x.ts||x.gameTs)).slice(0,5);
+  const serious=all.filter(x=>['Mistake','Miss','Blunder'].includes(x.grade)).length;
+  const top=ranked.slice(0,4).map(([k,n])=>'<div class="trendrow"><span>'+k+'</span><b>'+n+'</b></div>').join('');
+  const recentHtml=recent.length?recent.map(x=>'<div class="recenterr"><b>'+x.move+' '+x.grade+'</b><span>'+x.category+(x.best?' · best '+x.best:'')+'</span></div>').join(''):'<div class="trendempty">No meaningful mistakes logged yet.</div>';
+  host.innerHTML=
+    '<div class="trendstats"><span><b>'+games.length+'</b> games</span><span><b>'+all.length+'</b> errors</span><span><b>'+serious+'</b> serious</span></div>'+
+    '<div class="trendsub">Recurring habits</div>'+ (top||'<div class="trendempty">No recurring habits yet.</div>')+
+    '<div class="trendsub">Recent mistakes</div>'+recentHtml+
+    '<div class="trendhint">'+(ranked.length?'Current focus: <b>'+ranked[0][0]+'</b>. Try to consciously check for this before every move.':'')+'</div>';
+}
+function clearMistakeHistory(){
+  if(!confirm('Clear all saved ChessTool mistake history?'))return;
+  MISTAKE_GAMES=[];
+  try{localStorage.removeItem(MISTAKE_LOG_KEY);}catch(e){}
+  renderMistakeTrends();
+}
+
 // ─── GAME STATE ──────────────────────────────────────────────────────────────
 // CRITICAL: flipped is ONLY changed by explicit user action (flip button, toggle side, bot color, random line)
 // It is NEVER changed automatically inside rendering or auto-play functions
@@ -380,8 +476,9 @@ function startRandom(){
 const PLAN_LINE_MAP={
   'e-e5-4n':'eng-rev-sic','e-e5-cl':'eng-bot','e-sym':'eng-sym','e-hedge':'eng-hedge',
   'e-grun':'eng-grun','e-kid':'eng-kid','e-e6':'eng-e6','e-c6':'eng-c6',
-  'e-dutch':'eng-dutch','e-b6':'eng-b6','ck-cls':'ck-class','ck-cls2':'ck-class',
-  'ck-adv':'ck-adv','ck-tal':'ck-adv','ck-panov':'ck-panov','ck-ex':'ck-exchange',
+  'e-dutch':'eng-dutch','e-b6':'eng-b6','e-e6-ex':'eng-e6','e-sym-e6':'eng-sym',
+  'ck-cls':'ck-class','ck-cls2':'ck-class',
+  'ck-adv':'ck-adv','ck-tal':'ck-adv','ck-adv-nc3':'ck-adv','ck-panov':'ck-panov','ck-ex':'ck-exchange','ck-ex-nf3':'ck-exchange',
   'ck-2k':'ck-two','ck-fan':'ck-fantasy','ck-hill':'ck-hill','ck-d3':'ck-d3'
 };
 function historyFromSans(sans){
@@ -1232,6 +1329,12 @@ function hangingPiecesAfterMove(afterFen,moverColor){
     return out.sort((x,y)=>y.value-x.value);
   }catch(e){return[];}
 }
+function missedMateLesson(beforeEval,afterEval,bestSan,grade){
+  if(grade!=='Miss'||beforeEval?.kind!=='mate'||afterEval?.kind==='mate')return'';
+  const n=Math.abs(beforeEval.value);
+  return' Missed mate: you had a forced mate in '+n+(bestSan?' with '+bestSan+' as the engine’s preferred continuation':'')+
+    '. The played move gave up the forced mate'+(afterEval?' but the resulting evaluation is '+evalText(afterEval):'')+'.';
+}
 function bigSwingLesson(entry,beforeFen,afterFen,opponentBestUci,opponentInfo,probLoss,grade){
   if(!['Mistake','Miss','Blunder'].includes(grade)||!opponentBestUci||!isLegalEngineMove(afterFen,opponentBestUci))return'';
   try{
@@ -1493,12 +1596,13 @@ function analyzeReview(){
           explanation+=earlyMiddlegameLesson(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,c.label,i);
           const opponentBestUci=after?.best||null;
           explanation+=bigSwingLesson(e,REVIEW_FENS[i],REVIEW_FENS[i+1],opponentBestUci,after?.info||null,probLoss,c.label);
+          explanation+=missedMateLesson(eb,qualityAfter,bestSan,c.label);
           if(played)explanation+=' This move received a targeted same-parent verification.';
           explanation+=reviewStabilityNote(qualityAfter,resultPositionEval,i);
           explanation+=matePerspectiveTransitionNote(eb,displayAfter);
 
           const repStatus=repertoireMoveStatus(e.fen,e.san);
-          return{grade:c.label,icon:c.icon,cls:c.cls,inBook:repStatus.inBook,transposition:repStatus.transposition,evalAfter:displayAfter,bestSan,probLoss,explanation,sameParent:!!played};
+          return{grade:c.label,icon:c.icon,cls:c.cls,inBook:repStatus.inBook,transposition:repStatus.transposition,evalAfter:displayAfter,bestSan,probLoss,explanation,sameParent:!!played,beforeEval:eb,qualityAfter};
         }catch(err){
           console.error('Review move finalization failed',i,e?.san,err);
           const inBook=isRepertoireMove(e?.fen,e?.san);
@@ -1513,6 +1617,7 @@ function analyzeReview(){
       });
 
       if(eng)eng.textContent=(REVIEW_MODE==='fast'?'Fast':'Deep')+' review complete · '+cachedHits+' cached · '+extraChecks+' extra checks';
+      saveMistakeTrends();
       renderReviewList();
       renderReviewDetail();
     }catch(err){
@@ -1662,6 +1767,7 @@ function setMode(mode){
   show('expcard',mode==='drill');
   show('midbotcard',mode==='drill');
   show('botcard',mode==='bot');
+  show('trendcard',mode==='bot');
   show('randbtn',mode==='drill');
   show('newgamebtn',mode==='bot');
   show('revbtn',false);
@@ -1687,11 +1793,12 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.18 loaded: Book-only repertoire labels + stronger tactical bot + concrete punishment lines');
+console.info('ChessTool V2.19 loaded: deeper repertoire + persistent mistake trends + missed-mate coaching');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
 buildLineSelector();
+renderMistakeTrends();
 drawBoard();
 refreshPanel();
 drawMoveList();
