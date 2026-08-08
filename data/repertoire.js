@@ -281,4 +281,14 @@ const DLINES=[
   {id:'ck-fan', label:'Caro-Kann: Fantasy',                   group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','f3','dxe4','fxe4','e5','Nf3','exd4','Bc4','Nf6','O-O','Be7','e5','Nd5']},
   {id:'ck-hill',label:'Caro-Kann: Hillbilly',                 group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','Bc4','d5','exd5','cxd5','Bb5+','Nc6','d4','Nf6','Nf3','Bf5','O-O','e6']},
   {id:'ck-d3',  label:'Caro-Kann: Quiet 2.d3',                group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d3','d5','Nd2','e5','Ngf3','Bd6','g3','Nf6','Bg2','O-O','O-O','Re8']},
+
+  {id:'e-e6-ex',label:'English: vs ...e6 — Exchange/QGD structure', group:'English (White)', color:'white',
+   sans:['c4','e6','Nc3','d5','cxd5','exd5','d4','Nf6','Nf3','Be7','g3','O-O','Bg2','c6','O-O','Bf5','Bf4','Nbd7','Rc1','Re8','Re1']},
+  {id:'e-sym-e6',label:'English: Symmetrical — ...e6 / central break', group:'English (White)', color:'white',
+   sans:['c4','c5','Nf3','Nc6','Nc3','Nf6','g3','e6','Bg2','d5','d4','cxd4','Nxd4','Bc5','Nb3','Be7','O-O','O-O','e4','d4','Ne2']},
+  {id:'ck-ex-nf3',label:'Caro-Kann: Exchange — Nf3/Bd3 setup', group:'Caro-Kann (Black)', color:'black',
+   sans:['e4','c6','d4','d5','exd5','cxd5','Nf3','Nc6','Bd3','Bg4','c3','e6','Bf4','Bd6','Bxd6','Qxd6','Nbd2','Nge7','O-O','O-O']},
+  {id:'ck-adv-nc3',label:'Caro-Kann: Advance — 4.Nc3 / g4', group:'Caro-Kann (Black)', color:'black',
+   sans:['e4','c6','d4','d5','e5','Bf5','Nc3','e6','g4','Bg6','Nge2','c5','h4','h5','Nf4','Bh7','g5','cxd4','Qxd4','Ne7']},
+
 ];
