@@ -750,6 +750,27 @@ function tacticOverrideCp(rating){
   if(rating<=1800)return 400;
   return 300;
 }
+function capturedMaterialValue(fen,uci){
+  if(!isLegalEngineMove(fen,uci))return 0;
+  const {bd}=parseFen(fen);
+  const tf=uci.charCodeAt(2)-97,tr=+uci[3]-1;
+  const cap=GP(bd,tr,tf);
+  return cap?materialValue(cap):0;
+}
+function obviousTacticalWin(fen,uci,info,rating){
+  if(!isLegalEngineMove(fen,uci)||!info)return false;
+  const cap=capturedMaterialValue(fen,uci);
+  const after=applyUci(fen,uci);
+  const givesCheck=inCheck(after,parseFen(after).turn);
+  // Taking a loose minor/rook/queen is exactly the kind of tactic a 1400+
+  // opponent should punish reliably.
+  if(cap>=280)return true;
+  if(info.type!=='cp')return false;
+  const edge=info.value; // full scan is side-to-move relative
+  if(cap>=90&&edge>=(rating<=1400?260:rating<=1600?220:180))return true;
+  if(givesCheck&&edge>=(rating<=1400?350:rating<=1600?300:250))return true;
+  return false;
+}
 function chooseRatedMoveWithTactics(fen,rating,cb,fullStrength=false){
   if(fullStrength){
     sfAnalyzePositionDepth(fen,13,res=>{
@@ -765,6 +786,9 @@ function chooseRatedMoveWithTactics(fen,rating,cb,fullStrength=false){
       const info=res.info||{};
       if(info.type==='mate'&&info.value>0&&Math.abs(info.value)<=mateOverrideLimit(rating)){
         cb(res.best,{override:'mate',info});return;
+      }
+      if(obviousTacticalWin(fen,res.best,info,rating)){
+        cb(res.best,{override:'material-tactic',info});return;
       }
       if(info.type==='cp'&&info.value>=tacticOverrideCp(rating)&&moveIsTactical(fen,res.best)){
         cb(res.best,{override:'tactic',info});return;
@@ -992,6 +1016,7 @@ const MOVE_CLASS_META={
   Blunder:{icon:'??',cls:'mc-blunder'},
   Forced:{icon:'□',cls:'mc-forced'},
   Checkmate:{icon:'#',cls:'mc-mate'},
+  Book:{icon:'📖',cls:'mc-book'},
   'Not analyzed':{icon:'…',cls:'rn'}
 };
 function moverWinProb(ev,side){
@@ -1182,30 +1207,65 @@ function earlyMiddlegameLesson(entry,beforeFen,afterFen,bestSan,grade,plyIndex){
   }
 }
 
-function bigSwingLesson(entry,beforeFen,afterFen,opponentBestUci,probLoss,grade){
+function pvSanLine(fen,pv,maxPlies=4){
+  if(!Array.isArray(pv)||!pv.length)return'';
+  let cur=fen;const out=[];
+  for(const u of pv.slice(0,maxPlies)){
+    if(!isLegalEngineMove(cur,u))break;
+    const san=uci2san(cur,u);
+    if(!san)break;
+    out.push(san);cur=applyUci(cur,u);
+  }
+  return out.join(' ');
+}
+function hangingPiecesAfterMove(afterFen,moverColor){
+  try{
+    const {bd}=parseFen(afterFen),enemy=moverColor==='w'?'b':'w',out=[];
+    for(let r=0;r<8;r++)for(let f=0;f<8;f++){
+      const pc=GP(bd,r,f);
+      if(!pc||friendly(pc,enemy)||pc.toUpperCase()==='K')continue;
+      if(attacked(bd,r,f,enemy)){
+        const sq=String.fromCharCode(97+f)+(r+1);
+        out.push({sq,pc,value:materialValue(pc)});
+      }
+    }
+    return out.sort((x,y)=>y.value-x.value);
+  }catch(e){return[];}
+}
+function bigSwingLesson(entry,beforeFen,afterFen,opponentBestUci,opponentInfo,probLoss,grade){
   if(!['Mistake','Miss','Blunder'].includes(grade)||!opponentBestUci||!isLegalEngineMove(afterFen,opponentBestUci))return'';
   try{
     const replySan=uci2san(afterFen,opponentBestUci);
-    const movedTo=entry.uci?.slice(2,4);
-    const replyTo=opponentBestUci.slice(2,4);
+    const mover=parseFen(beforeFen).turn;
+    const movedTo=entry.uci?.slice(2,4),replyTo=opponentBestUci.slice(2,4);
     const {bd:afterBd}=parseFen(afterFen);
     const tf=movedTo?.charCodeAt(0)-97,tr=movedTo?+movedTo[1]-1:-1;
     const movedPiece=(movedTo&&tf>=0&&tr>=0)?GP(afterBd,tr,tf):null;
     const notes=[];
+
     if(movedPiece&&replyTo===movedTo&&replySan.includes('x')){
-      notes.push('The immediate tactical problem is '+replySan+': the piece you just moved to '+movedTo+' can be captured.');
+      notes.push('Immediate punishment: '+replySan+' captures the piece you just moved to '+movedTo+'.');
     }else if(replySan.includes('x')){
-      notes.push('The opponent has the forcing capture '+replySan+', so calculate that capture and the full recapture sequence before choosing this move.');
+      const captured=capturedMaterialValue(afterFen,opponentBestUci);
+      notes.push('Immediate punishment: '+replySan+' is a forcing capture'+(captured>=280?' that wins a piece or more':'')+'.');
     }else{
       const next=applyUci(afterFen,opponentBestUci);
-      if(inCheck(next,parseFen(next).turn))notes.push('The opponent has the forcing reply '+replySan+' with check.');
+      if(inCheck(next,parseFen(next).turn))notes.push('Immediate punishment: '+replySan+' gives check and forces your response.');
     }
-    if(probLoss!=null&&probLoss>=.15)notes.push('This is a large evaluation swing, so look first for a concrete tactical cause rather than a small positional detail.');
-    return notes.length?' Tactical cause: '+notes.join(' '):'';
-  }catch(err){
-    return'';
-  }
+
+    const loose=hangingPiecesAfterMove(afterFen,mover).filter(x=>x.value>=280);
+    if(loose.length&&!notes.some(n=>n.includes(loose[0].sq)))
+      notes.push('After your move, your '+pieceName(loose[0].pc)+' on '+loose[0].sq+' is attacked; verify whether it has a safe tactical defense.');
+
+    const line=pvSanLine(afterFen,opponentInfo?.pv||[],4);
+    if(line)notes.push('Engine punishment line: '+line+'.');
+    if(probLoss!=null&&probLoss>=.15)
+      notes.push('This is a large swing, so the cause is likely concrete—checks, captures, or a loose piece—rather than a small positional preference.');
+
+    return notes.length?' Tactical cause: '+notes.slice(0,3).join(' '):'';
+  }catch(err){return'';}
 }
+
 function reviewExplanation(entry,beforeFen,afterFen,bestSan,probLoss,engineOK,classification='',plyIndex=0){
   const {bd,turn}=parseFen(beforeFen);
   const ff=entry.uci.charCodeAt(0)-97,fr=+entry.uci[1]-1,tf=entry.uci.charCodeAt(2)-97,tr=+entry.uci[3]-1;
@@ -1237,11 +1297,15 @@ function reviewExplanation(entry,beforeFen,afterFen,bestSan,probLoss,engineOK,cl
     Miss:'A major winning opportunity or forced mate was available and was missed.',
     Blunder:'A major swing in the expected result of the game.',
     Forced:'This was the only legal move or the engine’s best resistance in an unavoidable forced-mate sequence.',
-    Checkmate:'This move ends the game by checkmate.'
+    Checkmate:'This move ends the game by checkmate.',
+    Book:'This is a stored repertoire move, so ChessTool treats it as a book move rather than assigning a separate engine-quality label.'
   };
   if(meanings[classification])parts.push(meanings[classification]);
 
-  if(engineOK&&bestSan){
+  if(classification==='Book'){
+    // Repertoire explanation above is enough; do not undermine a book move with
+    // a second Best/Excellent/Inaccuracy-style engine judgment.
+  }else if(engineOK&&bestSan){
     if(bestSan===entry.san)parts.push('The move matches Stockfish’s first choice.');
     else{
       const bestUci=san2uci(beforeFen,bestSan);
@@ -1278,8 +1342,9 @@ function renderReviewList(){
     const owner=e.byBot?'Bot':'You';
     const label=r.grade||'Analyzing…',icon=r.icon||'…',cls=r.cls||'rn';
     const evalTxt=r.evalAfter==null?'':(' · '+evalText(r.evalAfter));
-    const book=r.inBook?' <span class="booktag">📖 '+(r.transposition?'Transposition':'Repertoire')+'</span>':'';
-    div.innerHTML='<span class="rm">'+reviewMoveLabel(i)+'</span> <span class="reviewowner">'+owner+'</span> <span class="moveclass '+cls+'"><span class="moveicon">'+icon+'</span> '+label+'</span>'+book+'<span class="rn">'+evalTxt+'</span>';
+    const book=(r.inBook&&label!=='Book')?' <span class="booktag">📖 '+(r.transposition?'Transposition':'Repertoire')+'</span>':'';
+    const bookKind=(r.inBook&&label==='Book'&&r.transposition)?' <span class="booktag">Transposition</span>':'';
+    div.innerHTML='<span class="rm">'+reviewMoveLabel(i)+'</span> <span class="reviewowner">'+owner+'</span> <span class="moveclass '+cls+'"><span class="moveicon">'+icon+'</span> '+label+'</span>'+bookKind+book+'<span class="rn">'+evalTxt+'</span>';
     div.onclick=()=>reviewGo(i+1);
     el.appendChild(div);
   });
@@ -1298,8 +1363,9 @@ function renderReviewDetail(){
   }
   const i=REVIEW_INDEX-1,e=BOT_LOG[i],r=REVIEW_RESULTS[i]||{};
   const title=reviewMoveLabel(i)+' · '+(e.byBot?'Bot':'You');
-  const book=r.inBook?' · 📖 Repertoire':'';
-  const html='<strong class="'+(r.cls||'')+'">'+(r.icon||'…')+' '+(r.grade||'Analysis pending')+'</strong>'+book+(r.bestSan&&r.bestSan!==e.san?' · Best: '+r.bestSan:'')+(r.evalAfter!=null?' · Eval: '+evalText(r.evalAfter):'')+'<div class="reviewexplain">'+(r.explanation||'Analysis is still running…')+'</div>';
+  const book=(r.inBook&&r.grade!=='Book')?' · 📖 '+(r.transposition?'Transposition':'Repertoire'):'';
+  const best=(r.grade==='Book')?'':(r.bestSan&&r.bestSan!==e.san?' · Best: '+r.bestSan:'');
+  const html='<strong class="'+(r.cls||'')+'">'+(r.icon||'…')+' '+(r.grade||'Analysis pending')+'</strong>'+book+best+(r.evalAfter!=null?' · Eval: '+evalText(r.evalAfter):'')+'<div class="reviewexplain">'+(r.explanation||'Analysis is still running…')+'</div>';
   if(pos)pos.textContent=title;if(dpos)dpos.textContent=title;
   if(detail)detail.innerHTML=html;if(ddetail)ddetail.innerHTML=html;
 }
@@ -1338,7 +1404,7 @@ function analyzeReview(){
   const eng=document.getElementById('reviewengine');
   if(!SF||SF_FAILED){
     if(eng)eng.textContent='Stockfish unavailable';
-    REVIEW_RESULTS=BOT_LOG.map((e,i)=>{const inBook=isRepertoireMove(e.fen,e.san);return{grade:'Not analyzed',icon:'…',cls:'rn',inBook,transposition:repertoireMoveStatus(e.fen,e.san).transposition,evalAfter:null,bestSan:'',explanation:reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],'',null,false,'Not analyzed',i)};});
+    REVIEW_RESULTS=BOT_LOG.map((e,i)=>{const rs=repertoireMoveStatus(e.fen,e.san),inBook=rs.inBook,m=inBook?MOVE_CLASS_META.Book:MOVE_CLASS_META['Not analyzed'];return{grade:inBook?'Book':'Not analyzed',icon:m.icon,cls:m.cls,inBook,transposition:rs.transposition,evalAfter:null,bestSan:'',explanation:reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],'',null,false,inBook?'Book':'Not analyzed',i)};});
     renderReviewList();renderReviewDetail();return;
   }
   const posResults=new Array(REVIEW_FENS.length),playedResults=new Array(BOT_LOG.length);
@@ -1398,6 +1464,11 @@ function analyzeReview(){
           if(!legalMoves(finalFen).length&&inCheck(finalFen,finalTurn))
             c={label:'Checkmate',...MOVE_CLASS_META.Checkmate};
 
+          // Stored repertoire is a learning category, not a second engine grade.
+          // A book move simply displays "📖 Book". Checkmate still wins precedence.
+          if(inBook&&c.label!=='Checkmate')
+            c={label:'Book',...MOVE_CLASS_META.Book};
+
           // Practical opening floor. In the first eight moves, a move that
           // changes the objective engine score by only a few tenths is not
           // pedagogically useful as an Inaccuracy. Repertoire/transposition
@@ -1408,7 +1479,7 @@ function analyzeReview(){
           const quietOpening=(i<16&&pawnLoss!=null&&pawnLoss<=.35);
           const soundRepertoire=(inBook&&i<20&&qualityAfter?.kind!=='mate'&&
             ((probLoss!=null&&probLoss<=.075)||(pawnLoss!=null&&pawnLoss<=.55)));
-          if((quietOpening||soundRepertoire)&&['Inaccuracy','Mistake','Miss','Blunder'].includes(c.label))
+          if(!inBook&&(quietOpening||soundRepertoire)&&['Inaccuracy','Mistake','Miss','Blunder'].includes(c.label))
             c={label:'Good',...MOVE_CLASS_META.Good};
 
           const bestSan=bestUci&&isLegalEngineMove(e.fen,bestUci)?uci2san(e.fen,bestUci):'';
@@ -1421,7 +1492,7 @@ function analyzeReview(){
           }
           explanation+=earlyMiddlegameLesson(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,c.label,i);
           const opponentBestUci=after?.best||null;
-          explanation+=bigSwingLesson(e,REVIEW_FENS[i],REVIEW_FENS[i+1],opponentBestUci,probLoss,c.label);
+          explanation+=bigSwingLesson(e,REVIEW_FENS[i],REVIEW_FENS[i+1],opponentBestUci,after?.info||null,probLoss,c.label);
           if(played)explanation+=' This move received a targeted same-parent verification.';
           explanation+=reviewStabilityNote(qualityAfter,resultPositionEval,i);
           explanation+=matePerspectiveTransitionNote(eb,displayAfter);
@@ -1616,7 +1687,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.17 loaded: transposition-aware repertoire + practical opening floor + tactical swing explanations');
+console.info('ChessTool V2.18 loaded: Book-only repertoire labels + stronger tactical bot + concrete punishment lines');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
