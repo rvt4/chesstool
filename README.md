@@ -1,24 +1,37 @@
-# ChessTool V2.16
+# ChessTool V2.17
 
-Game Review finalization reliability patch.
+Focused opening/review teaching update.
 
-## Fixed: stuck on "Finalizing review"
+## Position-based repertoire recognition
+ChessTool now normalizes FEN positions using board, side-to-move, castling rights,
+and en-passant state while ignoring halfmove/fullmove counters.
 
-The verification queue now finishes correctly, but V2.15 exposed a second failure:
-an exception inside the final move-by-move classification/explanation pass could stop
-the renderer while the status remained "Finalizing review".
+A move is tagged:
+- `📖 Repertoire` when it is directly stored from that position.
+- `📖 Transposition` when a different move order reaches a position already in the repertoire.
 
-V2.16 makes finalization fault-tolerant:
+This makes the opening knowledge position-aware rather than relying only on one exact
+move sequence.
 
-- Every move is finalized inside its own error boundary.
-- If one explanation/classification fails, only that move falls back to
-  "Not analyzed"; the rest of the review still renders.
-- The moves 8–20 coaching helper is now self-contained and no longer depends on an
-  optional square helper.
-- Illegal/stale best moves are ignored before SAN conversion.
-- A whole-review watchdog forces finalization if the browser worker becomes stuck.
-- There is a last-resort partial-review renderer, so Game Review should never remain
-  permanently on "Finalizing review".
+## Practical opening grading
+During roughly the first eight moves, tiny engine differences are no longer taught as
+Inaccuracies. If the objective loss is only a few tenths, the move is at least Good.
+Known repertoire/transposition moves get a slightly wider practical floor.
 
-All V2.15 queue watchdog, terminal-move handling, caching, Fast/Deep review,
-practical opening grades, capped evaluations, bot play, and middlegame coaching remain.
+A genuine tactical or strategic loss can still receive a negative grade.
+
+## Better explanations for large swings
+For Mistake / Miss / Blunder moves, ChessTool now inspects the opponent's best reply
+from the resulting position.
+
+It can explicitly identify situations such as:
+- the piece you just moved can immediately be captured;
+- the opponent has a forcing capture;
+- the opponent has a forcing check;
+- the evaluation swing is large enough that you should search for a concrete tactic.
+
+This is especially useful for moves such as a queen move that simply allows `...Nxd5`
+instead of only displaying `Miss`.
+
+All V2.16 Fast Review reliability, caching, bot behavior, middlegame coaching,
+evaluation cap, Brilliant verification, and mate grading remain intact.
