@@ -1,50 +1,33 @@
-# ChessTool V2.6
+# ChessTool V2.7
 
-Personal English Opening + Caro-Kann trainer built around one continuous workflow:
+Focused accuracy patch on top of V2.6.
 
-**opening repertoire → early middlegame plan → coached practice → full-game review**
+## V2.7 changes
 
-## Main training mode
+### Legal engine-move gate
+Every engine `bestmove` is checked against ChessTool's own `legalMoves(fen)` result before it is used or displayed.
 
-There is now one Train mode instead of separate Train and Study modes.
+If an old/stale Stockfish result ever suggests an illegal move such as impossible castling, ChessTool rejects it. Review analysis retries the exact position instead of showing the illegal recommendation. Rated bot play falls back to a legal local move rather than executing an invalid engine result.
 
-### Opening phase
-- Opponent autoplays random continuations from the selected English or Caro-Kann lines.
-- You may make any legal move.
-- Correct repertoire moves continue.
-- Wrong moves are explained and the position resets so you can retry.
-- Hint reveals the expected repertoire move.
+### Much stricter Brilliant moves
+A move is no longer Brilliant simply because a valuable piece lands on an attacked square.
 
-### Middlegame phase
-- When the stored opening line ends, training automatically continues from that exact position.
-- The relevant strategic blueprint stays visible: goal, pawn breaks, piece placement, opponent plan, trigger, and common mistake.
-- Choose an approximate opponent level: 1400 / 1600 / 1800 / 2000.
-- The opponent uses limited-strength Stockfish.
-- Your moves are independently checked by full-strength Stockfish at depth 13.
-- Every move receives Best / Excellent / Good / Inaccuracy / Mistake / Miss / Blunder-style feedback plus the engine's preferred move.
-- Inaccuracy or worse resets the position so you can find a stronger move.
-- Hint reveals Stockfish's current best move.
+To receive **‼ Brilliant**, the move must:
+1. be Stockfish's top move;
+2. give up meaningful non-pawn material;
+3. remain essentially lossless;
+4. and Stockfish's principal variation must show the opponent actually accepting the offered material.
 
-## Game Review
-- Stockfish depth-14 analysis with retry and synchronized searches.
-- Classification icons:
-  - ‼ Brilliant
-  - ! Great
-  - ★ Best
-  - ✓ Excellent
-  - ● Good
-  - ?! Inaccuracy
-  - ? Mistake
-  - ⓧ Miss
-  - ?? Blunder
-  - □ Forced
-  - # Checkmate
-- 📖 Repertoire is displayed as a separate opening tag.
-- Move definitions are built into an expandable legend.
-- Review board, Previous/Next controls, best move, evaluation and explanation remain directly under the board on mobile.
-- Mate scores display as M# / -M# and the mating move is labeled Checkmate.
+If those conditions are not met, the move is classified normally as Best / Great / etc.
 
-## Data validation
-All 20 repertoire branches and all 18 mapped middlegame structures validate through ChessTool's legal-move engine.
+### Better forced-mate grading
+Positions with a forced mate are now handled separately:
+- `# Checkmate` for the mating move.
+- `! Great` for a best move that preserves/executes a forced mate.
+- `□ Forced` for the only legal move or best resistance when mate is unavoidable.
+- `?? Blunder` when a move materially shortens the forced mate.
+- `ⓧ Miss` when a player throws away a forced mate.
 
-GitHub Pages: deploy `main` from `/ (root)`.
+This prevents long forced-mate sequences from being filled with generic Excellent labels.
+
+All existing V2.6 training, rated middlegame opponent, live move feedback, review icons, and repertoire/middlegame data remain intact.
