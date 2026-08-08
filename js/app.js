@@ -371,7 +371,10 @@ function prepareMiddlegameTurn(){
   sfAnalyzePositionDepth(FEN,13,res=>{
     MID_ANALYZING=false;PRACTICE_LOCK=false;
     if(!SESSION_STARTED||STUDY_PHASE!=='middlegame')return;
-    MID_PRE_ANALYSIS=res?{best:res.best,eval:infoWhiteEval(FEN,res.info),info:res.info}:null;
+    if(res){
+      const ev=infoWhiteEval(FEN,res.info);evaluationPerspectiveSanity(FEN,res.info,ev);
+      MID_PRE_ANALYSIS={best:res.best,eval:ev,info:res.info};
+    }else MID_PRE_ANALYSIS=null;
     const bestSan=MID_PRE_ANALYSIS?.best?uci2san(FEN,MID_PRE_ANALYSIS.best):'';
     setStat('Your move — find the strongest continuation.','info');
     setCoach('Middlegame: apply the blueprint and calculate. '+(bestSan?'Your move will be compared with full-strength Stockfish.':'Engine feedback will be given when available.'));
@@ -408,6 +411,7 @@ function handleStudyMiddlegameMove(uci){
     MID_ANALYZING=false;
     if(!SESSION_STARTED||STUDY_PHASE!=='middlegame')return;
     const afterEval=res?infoWhiteEval(afterFen,res.info):null;
+    if(res&&afterEval)evaluationPerspectiveSanity(afterFen,res.info,afterEval);
     const beforeEval=MID_PRE_ANALYSIS?.eval||null;
     const mover=parseFen(beforeFen).turn;
     const pb=whiteWinProb(beforeEval),pa=whiteWinProb(afterEval);
@@ -875,11 +879,25 @@ function sfAnalyzePosition(fen,cb){sfAnalyzePositionDepth(fen,14,cb);}
 
 function infoWhiteEval(fen,info){
   if(!info)return null;
-  // IMPORTANT: the stockfish.js build used by ChessTool reports scores from
-  // White's perspective already. V2.9 incorrectly flipped the sign whenever
-  // Black was to move, creating the telltale -/+/-/+ evaluation oscillation.
-  if(info.type==='mate')return{kind:'mate',value:info.value};
-  return{kind:'cp',value:info.value/100};
+  // stockfish.js reports score from the SIDE TO MOVE. Normalize every score
+  // to White's perspective before storing/displaying it:
+  //   positive = White better / White mating
+  //   negative = Black better / Black mating
+  const stm=parseFen(fen).turn;
+  const signed=stm==='w'?info.value:-info.value;
+  if(info.type==='mate')return{kind:'mate',value:signed};
+  return{kind:'cp',value:signed/100};
+}
+function evaluationPerspectiveSanity(fen,info,normalized){
+  if(!info||!normalized)return true;
+  const stm=parseFen(fen).turn;
+  const expected=stm==='w'?Math.sign(info.value):-Math.sign(info.value);
+  const got=Math.sign(normalized.value);
+  if(info.value!==0&&expected!==0&&got!==expected){
+    console.error('Evaluation perspective sanity check failed', {fen,info,normalized});
+    return false;
+  }
+  return true;
 }
 function evalText(ev){
   if(!ev)return'';
@@ -1171,6 +1189,14 @@ function reviewStabilityNote(playedEval,resultEval,plyIndex){
   return'';
 }
 
+function matePerspectiveTransitionNote(beforeEval,afterEval){
+  if(!beforeEval||!afterEval||beforeEval.kind!=='mate'||afterEval.kind!=='mate')return'';
+  if(Math.sign(beforeEval.value)!==Math.sign(afterEval.value)){
+    return' Mate-side changed between consecutive positions. This can be legitimate only if the move actually escapes or reverses a forced mate; inspect this move closely.';
+  }
+  return'';
+}
+
 function analyzeReview(){
   const eng=document.getElementById('reviewengine');
   if(!SF||SF_FAILED){
@@ -1207,6 +1233,7 @@ function analyzeReview(){
       const bestSan=bestUci?uci2san(e.fen,bestUci):'';
       let explanation=reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,probLoss,true,c.label,i);
       explanation+=reviewStabilityNote(qualityAfter,displayAfter,i);
+      explanation+=matePerspectiveTransitionNote(eb,displayAfter);
       return{grade:c.label,icon:c.icon,cls:c.cls,inBook,evalAfter:displayAfter,bestSan,probLoss,explanation,sameParent:!!played};
     });
     if(eng)eng.textContent='Stockfish complete';
@@ -1220,7 +1247,10 @@ function analyzeReview(){
     const depth=j<20?15:14;
     if(eng)eng.textContent='Move accuracy '+Math.round(100*j/Math.max(1,limit))+'%';
     sfAnalyzePlayedMove(e.fen,e.uci,depth,res=>{
-      playedResults[j]=res?{eval:infoWhiteEval(e.fen,res.info),info:res.info}:null;
+      if(res){
+        const ev=infoWhiteEval(e.fen,res.info);evaluationPerspectiveSanity(e.fen,res.info,ev);
+        playedResults[j]={eval:ev,info:res.info};
+      }else playedResults[j]=null;
       analyzePlayed(j+1);
     });
   }
@@ -1236,7 +1266,10 @@ function analyzeReview(){
     }
     const reviewDepth=idx<10?18:(idx<20?17:(idx<40?15:14));
     sfAnalyzePositionDepth(fen,reviewDepth,res=>{
-      posResults[idx]=res?{best:res.best,eval:infoWhiteEval(fen,res.info),info:res.info}:{best:null,eval:null,info:null};
+      if(res){
+        const ev=infoWhiteEval(fen,res.info);evaluationPerspectiveSanity(fen,res.info,ev);
+        posResults[idx]={best:res.best,eval:ev,info:res.info};
+      }else posResults[idx]={best:null,eval:null,info:null};
       k++;if(eng)eng.textContent='Position analysis '+Math.round(100*k/REVIEW_FENS.length)+'%';next();
     });
   }
@@ -1341,7 +1374,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.10 loaded: corrected score perspective + stable early review + stricter brilliant verification');
+console.info('ChessTool V2.11 loaded: side-to-move score normalization restored + mate perspective regression checks');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
