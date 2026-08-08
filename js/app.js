@@ -28,6 +28,47 @@ function startPlanQuiz(){
 }
 function loadProgress(){try{const x=JSON.parse(localStorage.getItem('chesstool_plan_score')||'null');if(x&&Number.isFinite(x.c)&&Number.isFinite(x.t))PLAN_SCORE=x;}catch(e){}document.getElementById('psc').textContent=PLAN_SCORE.c+' / '+PLAN_SCORE.t;}
 
+
+// ─── POSITION-BASED REPERTOIRE INDEX ───────────────────────────────────────
+// FEN halfmove/fullmove counters are not part of chess-position identity.
+// Using the first four fields lets equivalent move orders transpose cleanly.
+function repertoirePositionKey(fen){
+  return (fen||'').split(/\s+/).slice(0,4).join(' ');
+}
+const REPERTOIRE_POSITION_INDEX=(()=>{
+  const idx={};
+  for(const line of DLINES){
+    let fen=INIT;
+    for(let ply=0;ply<line.sans.length;ply++){
+      const san=line.sans[ply],key=repertoirePositionKey(fen);
+      const u=san2uci(fen,san);
+      if(!u)break;
+      const next=applyUci(fen,u),nextKey=repertoirePositionKey(next);
+      if(!idx[key])idx[key]={moves:{},lines:new Set()};
+      idx[key].moves[san]={nextKey,lineId:line.id,color:line.color,ply};
+      idx[key].lines.add(line.id);
+      if(!idx[nextKey])idx[nextKey]={moves:{},lines:new Set()};
+      idx[nextKey].lines.add(line.id);
+      fen=next;
+    }
+  }
+  return idx;
+})();
+function repertoireMoveStatus(fen,san){
+  try{
+    const key=repertoirePositionKey(fen),node=REPERTOIRE_POSITION_INDEX[key];
+    if(node?.moves?.[san])return{inBook:true,transposition:false,lineId:node.moves[san].lineId};
+    const u=san2uci(fen,san);
+    if(!u)return{inBook:false,transposition:false};
+    const nextKey=repertoirePositionKey(applyUci(fen,u));
+    const nextNode=REPERTOIRE_POSITION_INDEX[nextKey];
+    // If the move lands directly on a stored repertoire position, recognize it
+    // as a transposition even if this exact SAN was not stored from this move order.
+    if(nextNode&&nextNode.lines.size)return{inBook:true,transposition:true,lineId:[...nextNode.lines][0]};
+  }catch(e){}
+  return{inBook:false,transposition:false};
+}
+function isRepertoireMove(fen,san){return repertoireMoveStatus(fen,san).inBook;}
 // ─── GAME STATE ──────────────────────────────────────────────────────────────
 // CRITICAL: flipped is ONLY changed by explicit user action (flip button, toggle side, bot color, random line)
 // It is NEVER changed automatically inside rendering or auto-play functions
@@ -1141,15 +1182,40 @@ function earlyMiddlegameLesson(entry,beforeFen,afterFen,bestSan,grade,plyIndex){
   }
 }
 
+function bigSwingLesson(entry,beforeFen,afterFen,opponentBestUci,probLoss,grade){
+  if(!['Mistake','Miss','Blunder'].includes(grade)||!opponentBestUci||!isLegalEngineMove(afterFen,opponentBestUci))return'';
+  try{
+    const replySan=uci2san(afterFen,opponentBestUci);
+    const movedTo=entry.uci?.slice(2,4);
+    const replyTo=opponentBestUci.slice(2,4);
+    const {bd:afterBd}=parseFen(afterFen);
+    const tf=movedTo?.charCodeAt(0)-97,tr=movedTo?+movedTo[1]-1:-1;
+    const movedPiece=(movedTo&&tf>=0&&tr>=0)?GP(afterBd,tr,tf):null;
+    const notes=[];
+    if(movedPiece&&replyTo===movedTo&&replySan.includes('x')){
+      notes.push('The immediate tactical problem is '+replySan+': the piece you just moved to '+movedTo+' can be captured.');
+    }else if(replySan.includes('x')){
+      notes.push('The opponent has the forcing capture '+replySan+', so calculate that capture and the full recapture sequence before choosing this move.');
+    }else{
+      const next=applyUci(afterFen,opponentBestUci);
+      if(inCheck(next,parseFen(next).turn))notes.push('The opponent has the forcing reply '+replySan+' with check.');
+    }
+    if(probLoss!=null&&probLoss>=.15)notes.push('This is a large evaluation swing, so look first for a concrete tactical cause rather than a small positional detail.');
+    return notes.length?' Tactical cause: '+notes.join(' '):'';
+  }catch(err){
+    return'';
+  }
+}
 function reviewExplanation(entry,beforeFen,afterFen,bestSan,probLoss,engineOK,classification='',plyIndex=0){
   const {bd,turn}=parseFen(beforeFen);
   const ff=entry.uci.charCodeAt(0)-97,fr=+entry.uci[1]-1,tf=entry.uci.charCodeAt(2)-97,tr=+entry.uci[3]-1;
   const pc=GP(bd,fr,ff),cap=GP(bd,tr,tf);
   const parts=[];
-  const node=DB[beforeFen];
-  if(node&&node.moves&&node.moves[entry.san]){
-    const why=stripHtml(node.note||'');
-    parts.push(why?'📖 Repertoire: '+why:'📖 This move matches your stored repertoire.');
+  const node=DB[beforeFen],repStatus=repertoireMoveStatus(beforeFen,entry.san);
+  if(repStatus.inBook){
+    const why=node&&node.moves&&node.moves[entry.san]?stripHtml(node.note||''):'';
+    if(repStatus.transposition)parts.push('📖 Repertoire transposition: this move reaches a position already contained in your stored repertoire.');
+    else parts.push(why?'📖 Repertoire: '+why:'📖 This move matches your stored repertoire.');
   }else{
     if(entry.san==='O-O'||entry.san==='O-O-O')parts.push('You castle, improving king safety and connecting the rooks.');
     else if(cap)parts.push('You exchange your '+pieceName(pc)+' for the '+pieceName(cap)+' on '+entry.uci.slice(2,4)+'.');
@@ -1212,7 +1278,7 @@ function renderReviewList(){
     const owner=e.byBot?'Bot':'You';
     const label=r.grade||'Analyzing…',icon=r.icon||'…',cls=r.cls||'rn';
     const evalTxt=r.evalAfter==null?'':(' · '+evalText(r.evalAfter));
-    const book=r.inBook?' <span class="booktag">📖 Repertoire</span>':'';
+    const book=r.inBook?' <span class="booktag">📖 '+(r.transposition?'Transposition':'Repertoire')+'</span>':'';
     div.innerHTML='<span class="rm">'+reviewMoveLabel(i)+'</span> <span class="reviewowner">'+owner+'</span> <span class="moveclass '+cls+'"><span class="moveicon">'+icon+'</span> '+label+'</span>'+book+'<span class="rn">'+evalTxt+'</span>';
     div.onclick=()=>reviewGo(i+1);
     el.appendChild(div);
@@ -1272,7 +1338,7 @@ function analyzeReview(){
   const eng=document.getElementById('reviewengine');
   if(!SF||SF_FAILED){
     if(eng)eng.textContent='Stockfish unavailable';
-    REVIEW_RESULTS=BOT_LOG.map((e,i)=>{const inBook=!!DB[e.fen]?.moves?.[e.san];return{grade:'Not analyzed',icon:'…',cls:'rn',inBook,evalAfter:null,bestSan:'',explanation:reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],'',null,false,'Not analyzed',i)};});
+    REVIEW_RESULTS=BOT_LOG.map((e,i)=>{const inBook=isRepertoireMove(e.fen,e.san);return{grade:'Not analyzed',icon:'…',cls:'rn',inBook,transposition:repertoireMoveStatus(e.fen,e.san).transposition,evalAfter:null,bestSan:'',explanation:reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],'',null,false,'Not analyzed',i)};});
     renderReviewList();renderReviewDetail();return;
   }
   const posResults=new Array(REVIEW_FENS.length),playedResults=new Array(BOT_LOG.length);
@@ -1291,7 +1357,7 @@ function analyzeReview(){
 
     if(before.best===e.uci)return false;
     const loss=provisionalLoss(i);if(loss==null)return true;
-    const inBook=!!DB[e.fen]?.moves?.[e.san];
+    const inBook=isRepertoireMove(e.fen,e.san);
 
     // Forced-mate positions usually already have decisive information from
     // the position pass. Only Deep mode verifies a non-terminal mate move.
@@ -1324,7 +1390,7 @@ function analyzeReview(){
           const before=posResults[i],after=posResults[i+1],played=playedResults[i],mover=parseFen(e.fen).turn;
           const eb=before?.eval||null,resultPositionEval=after?.eval||null,qualityAfter=played?.eval||resultPositionEval;
           const displayAfter=(i<40&&played?.eval)?played.eval:resultPositionEval,pb=whiteWinProb(eb),pa=whiteWinProb(qualityAfter);
-          const probLoss=(pb==null||pa==null)?null:Math.max(0,mover==='w'?pb-pa:pa-pb),inBook=!!DB[e.fen]?.moves?.[e.san],bestUci=before?.best||null;
+          const probLoss=(pb==null||pa==null)?null:Math.max(0,mover==='w'?pb-pa:pa-pb),inBook=isRepertoireMove(e.fen,e.san),bestUci=before?.best||null;
 
           let c=classifyMove({entry:e,beforeFen:REVIEW_FENS[i],afterFen:REVIEW_FENS[i+1],bestUci,beforeEval:eb,afterEval:qualityAfter,probLoss,inBook,beforeInfo:before?.info});
 
@@ -1332,14 +1398,18 @@ function analyzeReview(){
           if(!legalMoves(finalFen).length&&inCheck(finalFen,finalTurn))
             c={label:'Checkmate',...MOVE_CLASS_META.Checkmate};
 
-          if(inBook&&i<20&&qualityAfter?.kind!=='mate'){
-            if(probLoss==null||probLoss<=.065){
-              if(!['Best','Great','Brilliant','Checkmate','Forced','Excellent'].includes(c.label))
-                c={label:'Good',...MOVE_CLASS_META.Good};
-            }else if(probLoss<=.11&&['Mistake','Miss','Blunder'].includes(c.label)){
-              c={label:'Inaccuracy',...MOVE_CLASS_META.Inaccuracy};
-            }
-          }
+          // Practical opening floor. In the first eight moves, a move that
+          // changes the objective engine score by only a few tenths is not
+          // pedagogically useful as an Inaccuracy. Repertoire/transposition
+          // moves get a slightly wider floor.
+          const pawnLoss=(eb?.kind==='cp'&&qualityAfter?.kind==='cp')
+            ? Math.max(0,mover==='w'?eb.value-qualityAfter.value:qualityAfter.value-eb.value)
+            : null;
+          const quietOpening=(i<16&&pawnLoss!=null&&pawnLoss<=.35);
+          const soundRepertoire=(inBook&&i<20&&qualityAfter?.kind!=='mate'&&
+            ((probLoss!=null&&probLoss<=.075)||(pawnLoss!=null&&pawnLoss<=.55)));
+          if((quietOpening||soundRepertoire)&&['Inaccuracy','Mistake','Miss','Blunder'].includes(c.label))
+            c={label:'Good',...MOVE_CLASS_META.Good};
 
           const bestSan=bestUci&&isLegalEngineMove(e.fen,bestUci)?uci2san(e.fen,bestUci):'';
           let explanation='';
@@ -1350,17 +1420,20 @@ function analyzeReview(){
             explanation='Move analysis completed, but the detailed explanation could not be generated.';
           }
           explanation+=earlyMiddlegameLesson(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,c.label,i);
+          const opponentBestUci=after?.best||null;
+          explanation+=bigSwingLesson(e,REVIEW_FENS[i],REVIEW_FENS[i+1],opponentBestUci,probLoss,c.label);
           if(played)explanation+=' This move received a targeted same-parent verification.';
           explanation+=reviewStabilityNote(qualityAfter,resultPositionEval,i);
           explanation+=matePerspectiveTransitionNote(eb,displayAfter);
 
-          return{grade:c.label,icon:c.icon,cls:c.cls,inBook,evalAfter:displayAfter,bestSan,probLoss,explanation,sameParent:!!played};
+          const repStatus=repertoireMoveStatus(e.fen,e.san);
+          return{grade:c.label,icon:c.icon,cls:c.cls,inBook:repStatus.inBook,transposition:repStatus.transposition,evalAfter:displayAfter,bestSan,probLoss,explanation,sameParent:!!played};
         }catch(err){
           console.error('Review move finalization failed',i,e?.san,err);
-          const inBook=!!DB[e?.fen]?.moves?.[e?.san];
+          const inBook=isRepertoireMove(e?.fen,e?.san);
           const after=posResults[i+1]?.eval||null;
           return{
-            grade:'Not analyzed',icon:'…',cls:'rn',inBook,evalAfter:after,bestSan:'',
+            grade:'Not analyzed',icon:'…',cls:'rn',inBook,transposition:repertoireMoveStatus(e?.fen,e?.san).transposition,evalAfter:after,bestSan:'',
             probLoss:null,
             explanation:'This move could not be fully classified because a local review step failed. The rest of the game review is still available.',
             sameParent:false
@@ -1378,7 +1451,7 @@ function analyzeReview(){
       if(!REVIEW_RESULTS.length){
         REVIEW_RESULTS=BOT_LOG.map((e,i)=>({
           grade:'Not analyzed',icon:'…',cls:'rn',
-          inBook:!!DB[e.fen]?.moves?.[e.san],
+          inBook:isRepertoireMove(e.fen,e.san),
           evalAfter:posResults[i+1]?.eval||null,
           bestSan:'',
           explanation:'Detailed classification was unavailable, but the game can still be replayed move by move.'
@@ -1543,7 +1616,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.16 loaded: crash-safe finalization + self-contained coaching + whole-review watchdog');
+console.info('ChessTool V2.17 loaded: transposition-aware repertoire + practical opening floor + tactical swing explanations');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
