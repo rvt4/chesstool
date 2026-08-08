@@ -941,13 +941,23 @@ function materialBalanceForSide(fen,side){
 function acceptedSacrificeMaterialLoss(entry,beforeFen,pv){
   if(!Array.isArray(pv)||pv.length<2||pv[0]!==entry.uci)return 0;
   const mover=parseFen(beforeFen).turn;
-  const afterMove=applyUci(beforeFen,entry.uci);
-  const reply=pv[1];
-  if(!isLegalEngineMove(afterMove,reply)||reply.slice(2,4)!==entry.uci.slice(2,4))return 0;
   const beforeBal=materialBalanceForSide(beforeFen,mover);
-  const afterAccept=applyUci(afterMove,reply);
-  const afterBal=materialBalanceForSide(afterAccept,mover);
-  return beforeBal-afterBal;
+  let fen=beforeFen;
+
+  // The first move must be the candidate and the opponent must actually take
+  // the offered piece on move two.
+  for(let i=0;i<Math.min(pv.length,4);i++){
+    const u=pv[i];
+    if(!isLegalEngineMove(fen,u))return 0;
+    if(i===1&&u.slice(2,4)!==entry.uci.slice(2,4))return 0;
+    fen=applyUci(fen,u);
+  }
+
+  // Look through the immediate recapture window. If the "sacrificed" material
+  // is simply won back on the next move (e.g. Qxd5 Qxd5 Bxd5), it is an
+  // exchange sequence, not a Brilliant sacrifice.
+  const afterWindowBal=materialBalanceForSide(fen,mover);
+  return beforeBal-afterWindowBal;
 }
 
 function isSacrificeCandidate(entry,beforeFen,afterFen){
@@ -987,30 +997,33 @@ function classifyMove({entry,beforeFen,afterFen,bestUci,beforeEval,afterEval,pro
   const beforeP=moverWinProb(beforeEval,mover),afterP=moverWinProb(afterEval,mover);
   const bm=mateForSide(beforeEval,mover),am=mateForSide(afterEval,mover);
 
-  // The mover is being forcibly mated.
+  // The mover is being forcibly mated. Once mate is unavoidable, grading is
+  // about resistance quality rather than pretending every shorter mate is a
+  // catastrophic new error.
   if(bm<0){
     if(am>=0)return{label:'Great',...MOVE_CLASS_META.Great}; // escaped mate
     if(best)return{label:'Forced',...MOVE_CLASS_META.Forced};
     const beforeDist=Math.abs(bm),afterDist=Math.abs(am);
     const shortened=beforeDist-afterDist;
-    if(shortened>=4)return{label:'Blunder',...MOVE_CLASS_META.Blunder};
-    if(shortened>=2)return{label:'Mistake',...MOVE_CLASS_META.Mistake};
-    if(shortened>=1)return{label:'Inaccuracy',...MOVE_CLASS_META.Inaccuracy};
-    return{label:'Good',...MOVE_CLASS_META.Good}; // prolonged mate / similar resistance
+    if(shortened>=6)return{label:'Mistake',...MOVE_CLASS_META.Mistake};
+    if(shortened>=3)return{label:'Inaccuracy',...MOVE_CLASS_META.Inaccuracy};
+    return{label:'Good',...MOVE_CLASS_META.Good};
   }
 
   const beforeMate=bm>0,afterMate=am>0;
 
-  // The mover has a forced mate. Losing it is a Miss; making the mate much
-  // longer is graded by mate-distance deterioration rather than win probability.
+  // The mover has a forced mate. Preserving the forced win is still a strong
+  // move even if it is not the fastest engine mate. Only substantial loss of
+  // conversion efficiency is downgraded.
   if(beforeMate){
     if(!afterMate)return{label:'Miss',...MOVE_CLASS_META.Miss};
     if(best)return{label:'Great',...MOVE_CLASS_META.Great};
     const lengthened=am-bm;
-    if(lengthened>=4)return{label:'Blunder',...MOVE_CLASS_META.Blunder};
-    if(lengthened>=2)return{label:'Mistake',...MOVE_CLASS_META.Mistake};
-    if(lengthened>=1)return{label:'Inaccuracy',...MOVE_CLASS_META.Inaccuracy};
-    return{label:'Good',...MOVE_CLASS_META.Good};
+    if(lengthened<=0)return{label:'Excellent',...MOVE_CLASS_META.Excellent};
+    if(lengthened<=2)return{label:'Good',...MOVE_CLASS_META.Good};
+    if(lengthened<=4)return{label:'Inaccuracy',...MOVE_CLASS_META.Inaccuracy};
+    if(lengthened<=7)return{label:'Mistake',...MOVE_CLASS_META.Mistake};
+    return{label:'Blunder',...MOVE_CLASS_META.Blunder};
   }
 
   if(beforeP!=null&&afterP!=null&&beforeP>=.82&&afterP<.62&&probLoss>=.16)
@@ -1184,8 +1197,8 @@ function evalDrift(a,b){
 function reviewStabilityNote(playedEval,resultEval,plyIndex){
   if(plyIndex>=40)return'';
   const drift=evalDrift(playedEval,resultEval);
-  if(drift>=1.0)return' Engine searches disagreed by about '+drift.toFixed(1)+' pawns here, so treat the displayed board evaluation as approximate; the move grade uses the same-parent search.';
-  if(drift>=.55)return' The two engine searches differed moderately here; the move grade uses the more reliable same-parent comparison.';
+  if(drift>=1.0)return' Engine searches disagreed by about '+drift.toFixed(1)+' pawns here. ChessTool is showing and grading the more stable same-parent move search for this early position.';
+  if(drift>=.55)return' The two engine searches differed moderately here; ChessTool uses the same-parent result for this early move.';
   return'';
 }
 
@@ -1216,11 +1229,13 @@ function analyzeReview(){
     REVIEW_RESULTS=BOT_LOG.map((e,i)=>{
       const before=posResults[i],after=posResults[i+1],played=playedResults[i];
       const mover=parseFen(e.fen).turn;
-      const eb=before?.eval||null,displayAfter=after?.eval||null;
-      // For the opening and early middlegame, compare the best line and the
-      // played move from the SAME parent position. This removes much of the
-      // fake loss caused by comparing two independently searched positions.
-      const qualityAfter=played?.eval||displayAfter;
+      const eb=before?.eval||null,resultPositionEval=after?.eval||null;
+      // Through move 20, the played-move search evaluates the exact move from
+      // the SAME parent position. Use that for both grading and the displayed
+      // evaluation when available; the independent resulting-position search
+      // remains a stability cross-check.
+      const qualityAfter=played?.eval||resultPositionEval;
+      const displayAfter=(i<40&&played?.eval)?played.eval:resultPositionEval;
       const pb=whiteWinProb(eb),pa=whiteWinProb(qualityAfter);
       let probLoss=(pb==null||pa==null)?null:Math.max(0,mover==='w'?pb-pa:pa-pb);
       const inBook=!!DB[e.fen]?.moves?.[e.san];
@@ -1232,7 +1247,7 @@ function analyzeReview(){
       }
       const bestSan=bestUci?uci2san(e.fen,bestUci):'';
       let explanation=reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,probLoss,true,c.label,i);
-      explanation+=reviewStabilityNote(qualityAfter,displayAfter,i);
+      explanation+=reviewStabilityNote(qualityAfter,resultPositionEval,i);
       explanation+=matePerspectiveTransitionNote(eb,displayAfter);
       return{grade:c.label,icon:c.icon,cls:c.cls,inBook,evalAfter:displayAfter,bestSan,probLoss,explanation,sameParent:!!played};
     });
@@ -1374,7 +1389,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.11 loaded: side-to-move score normalization restored + mate perspective regression checks');
+console.info('ChessTool V2.12 loaded: same-parent early eval display + persistent-sacrifice Brilliant test + conversion-aware mate grading');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
