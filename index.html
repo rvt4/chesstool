@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChessTool V2.12</title>
+<title>ChessTool V2.13</title>
 <link rel="stylesheet" href="styles.css">
 
 </head>
 <body>
 <header>
-  <div class="logo">♟ ChessTool <small>English · Caro-Kann · V2.12</small></div>
+  <div class="logo">♟ ChessTool <small>English · Caro-Kann · V2.13</small></div>
   <nav>
     <button class="nb on" onclick="setMode('drill')">Train</button>
     <button class="nb" onclick="setMode('bot')">vs Bot</button>
@@ -143,6 +143,11 @@
     <div class="card hidden" id="revcard">
       <div class="ch"><span>Game Review</span><span id="reviewengine">Engine analysis</span></div>
       <div class="cb2">
+        <div class="reviewmodes">
+          <span>Review speed</span>
+          <button class="skb on" id="reviewfast" onclick="setReviewMode('fast')">Fast</button>
+          <button class="skb" id="reviewdeep" onclick="setReviewMode('deep')">Deep</button>
+        </div>
         <div class="reviewnav">
           <button class="cb" onclick="reviewStep(-1)">← Previous</button>
           <span id="reviewpos">Start</span>

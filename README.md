@@ -1,45 +1,25 @@
-# ChessTool V2.12
+# ChessTool V2.13
 
-Focused review-accuracy patch.
+## Faster Game Review
 
-## More stable opening evaluations
+Game Review defaults to **Fast** mode. It analyzes each position once, caches results by FEN in localStorage, and only performs a second same-parent search on meaningful errors, mate positions, tactical swings, or ambiguous early repertoire moves. Repeated English/Caro-Kann positions get progressively faster.
 
-Through move 20, ChessTool already runs a constrained Stockfish search on the move actually played from the same parent position.
+**Deep** review is still available from the Game Review panel and uses the higher-depth V2.12 approach.
 
-V2.12 now uses that same-parent result for the **displayed evaluation as well as the move grade** when available. The independently analyzed resulting position remains a cross-check.
+## Practical opening grading
 
-This is designed to reduce misleading quiet-opening swings caused by two separately searched positions disagreeing by 0.5–1.0+ pawns.
+Stored repertoire moves with only tiny expected-points differences no longer receive scary early-opening labels merely because the engine slightly prefers another main line.
 
-If the searches disagree materially, the move explanation says so explicitly.
+## Stockfish 18 local-engine folder
 
-## Brilliant now requires a persistent sacrifice
+`engine/` contains the exact upstream filenames, official source information, and expected WASM hash for Stockfish 18 lite-single. The environment that generated this ZIP would not allow the 7.3 MB executable WASM binary to be materialized, so the binary is not falsely represented as included. The current browser engine loader remains active.
 
-A temporary material drop is no longer enough.
+## Retained
 
-ChessTool follows the principal variation through the immediate capture/recapture window. If the material is simply recovered immediately — for example:
-
-`Qxd5 Qxd5 Bxd5`
-
-— the move is treated as an exchange sequence, not a Brilliant sacrifice.
-
-A Brilliant still requires:
-- Stockfish's top move;
-- essentially no loss versus best;
-- meaningful non-pawn material offered;
-- opponent accepts it in the PV;
-- material remains genuinely sacrificed after the immediate recapture window.
-
-## Forced-mate grading is conversion-aware
-
-If you have a forced mate and preserve it:
-- fastest/best mate: `! Great`
-- same or faster non-best mate: `✓ Excellent`
-- only 1–2 moves slower: `● Good`
-- 3–4 moves slower: `?! Inaccuracy`
-- 5–7 moves slower: `? Mistake`
-- very large delay: `?? Blunder`
-- throw away the forced mate entirely: `ⓧ Miss`
-
-If you are already being forcibly mated, ChessTool now focuses on resistance quality. Small changes in mate distance are no longer called Blunders.
-
-Everything else from V2.11 remains intact.
+- humanized 1400 / 1600 / 1800 / 2000 bots
+- tactical mate-conversion override
+- unified opening → middlegame Train mode
+- strategic blueprints and live middlegame feedback
+- legal engine-move validation
+- persistent-sacrifice Brilliant verification
+- conversion-aware forced-mate grading

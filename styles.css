@@ -186,3 +186,8 @@ nav{display:flex;gap:5px;flex-wrap:wrap}
 
 #botcard .skrow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}
 @media(max-width:800px){#botcard .skb{font-size:.66rem;padding:7px 1px}}
+
+/* V2.13 review performance controls */
+.reviewmodes{display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;margin-bottom:8px;font-size:.72rem;color:var(--muted)}
+.reviewmodes .skb{padding:6px 10px}
+@media(max-width:800px){.reviewmodes{position:sticky;top:0;background:var(--surf);z-index:2;padding:3px 0}}
