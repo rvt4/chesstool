@@ -191,3 +191,5 @@ nav{display:flex;gap:5px;flex-wrap:wrap}
 .reviewmodes{display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;margin-bottom:8px;font-size:.72rem;color:var(--muted)}
 .reviewmodes .skb{padding:6px 10px}
 @media(max-width:800px){.reviewmodes{position:sticky;top:0;background:var(--surf);z-index:2;padding:3px 0}}
+
+.mc-book{color:var(--acc)} .mc-book .moveicon{background:rgba(180,145,80,.14)}

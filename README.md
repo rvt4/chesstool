@@ -1,37 +1,46 @@
-# ChessTool V2.17
+# ChessTool V2.18
 
-Focused opening/review teaching update.
+Focused repertoire-label and tactical-training update.
 
-## Position-based repertoire recognition
-ChessTool now normalizes FEN positions using board, side-to-move, castling rights,
-and en-passant state while ignoring halfmove/fullmove counters.
+## Book moves are just Book moves
+If a move is recognized in your repertoire (including a recognized transposition),
+Game Review now displays:
 
-A move is tagged:
-- `📖 Repertoire` when it is directly stored from that position.
-- `📖 Transposition` when a different move order reaches a position already in the repertoire.
+`📖 Book`
 
-This makes the opening knowledge position-aware rather than relying only on one exact
-move sequence.
+It does **not** also call the move Best / Excellent / Good / Inaccuracy.
 
-## Practical opening grading
-During roughly the first eight moves, tiny engine differences are no longer taught as
-Inaccuracies. If the objective loss is only a few tenths, the move is at least Good.
-Known repertoire/transposition moves get a slightly wider practical floor.
+The evaluation can still be shown for context, but ChessTool no longer teaches tiny
+engine preferences as a second judgment on a move you deliberately chose for your
+repertoire.
 
-A genuine tactical or strategic loss can still receive a negative grade.
+A transposed book move is still identified as a transposition in the review UI and
+explanation.
 
-## Better explanations for large swings
-For Mistake / Miss / Blunder moves, ChessTool now inspects the opponent's best reply
-from the resulting position.
+## Stronger 1400+ tactical punishment
+The rated bot still uses humanized candidate selection for ordinary play.
 
-It can explicitly identify situations such as:
-- the piece you just moved can immediately be captured;
-- the opponent has a forcing capture;
-- the opponent has a forcing check;
-- the evaluation swing is large enough that you should search for a concrete tactic.
+The full-strength tactical scan now overrides that selection more reliably when the
+best move:
+- directly captures a loose minor piece, rook, or queen;
+- wins a pawn with a clearly large tactical edge;
+- gives a forcing check with a substantial evaluation advantage;
+- is a short forced mate (existing behavior).
 
-This is especially useful for moves such as a queen move that simply allows `...Nxd5`
-instead of only displaying `Miss`.
+This is designed to stop a 1400+ bot from repeatedly ignoring obvious piece-winning
+tactics while preserving realistic positional inaccuracies.
 
-All V2.16 Fast Review reliability, caching, bot behavior, middlegame coaching,
-evaluation cap, Brilliant verification, and mate grading remain intact.
+## More concrete Mistake / Miss / Blunder explanations
+For large errors, Game Review now examines the opponent's best reply and principal
+variation.
+
+It can show:
+- the exact immediate punishment;
+- when the piece you just moved can simply be captured;
+- when a forcing capture wins a piece or more;
+- when the punishment begins with check;
+- a short engine punishment line (up to four plies);
+- a warning about an attacked loose piece.
+
+All V2.17 Fast Review reliability, caching, transposition-aware repertoire,
+middlegame coaching, evaluation cap, Brilliant verification, and mate grading remain.
