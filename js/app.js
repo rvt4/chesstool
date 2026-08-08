@@ -1263,23 +1263,43 @@ function analyzeReview(){
   function provisionalLoss(i){const e=BOT_LOG[i],before=posResults[i],after=posResults[i+1];if(!before?.eval||!after?.eval)return null;const mover=parseFen(e.fen).turn,pb=whiteWinProb(before.eval),pa=whiteWinProb(after.eval);return Math.max(0,mover==='w'?pb-pa:pa-pb);}
   function needsPlayedVerification(i){
     const e=BOT_LOG[i],before=posResults[i],after=posResults[i+1];if(!before||!after)return false;
+
+    // A terminal move (checkmate/stalemate) is already fully determined by
+    // ChessTool's legal-move engine. Never send it through searchmoves; some
+    // browser Stockfish builds do not return a usable info/bestmove pair for
+    // that constrained terminal search.
+    const afterFen=REVIEW_FENS[i+1];
+    if(after?.eval?.terminal||!legalMoves(afterFen).length)return false;
+
     if(before.best===e.uci)return false;
     const loss=provisionalLoss(i);if(loss==null)return true;
     const inBook=!!DB[e.fen]?.moves?.[e.san];
+
+    // Forced-mate positions usually already have decisive information from
+    // the position pass. Only Deep mode verifies a non-terminal mate move.
+    if(before.eval?.kind==='mate'||after.eval?.kind==='mate')
+      return REVIEW_MODE==='deep'&&i<40;
+
     if(REVIEW_MODE==='deep')return i<40;
-    if(before.eval?.kind==='mate'||after.eval?.kind==='mate')return true;
     if(loss>=.045)return true;
     if(inBook&&i<20&&loss>=.025)return true;
     if(i<40&&evalDrift(before.eval,after.eval)>=1.75)return true;
     return false;
   }
+  let reviewFinalized=false;
   function finalize(){
+    if(reviewFinalized)return;
+    reviewFinalized=true;
+    if(eng)eng.textContent='Finalizing review…';
     REVIEW_RESULTS=BOT_LOG.map((e,i)=>{
       const before=posResults[i],after=posResults[i+1],played=playedResults[i],mover=parseFen(e.fen).turn;
       const eb=before?.eval||null,resultPositionEval=after?.eval||null,qualityAfter=played?.eval||resultPositionEval;
       const displayAfter=(i<40&&played?.eval)?played.eval:resultPositionEval,pb=whiteWinProb(eb),pa=whiteWinProb(qualityAfter);
       const probLoss=(pb==null||pa==null)?null:Math.max(0,mover==='w'?pb-pa:pa-pb),inBook=!!DB[e.fen]?.moves?.[e.san],bestUci=before?.best||null;
       let c=classifyMove({entry:e,beforeFen:REVIEW_FENS[i],afterFen:REVIEW_FENS[i+1],bestUci,beforeEval:eb,afterEval:qualityAfter,probLoss,inBook,beforeInfo:before?.info});
+      const finalFen=REVIEW_FENS[i+1],finalTurn=parseFen(finalFen).turn;
+      if(!legalMoves(finalFen).length&&inCheck(finalFen,finalTurn))
+        c={label:'Checkmate',...MOVE_CLASS_META.Checkmate};
       // Tiny engine preferences between sound repertoire moves are not opening mistakes.
       if(inBook&&i<20&&qualityAfter?.kind!=='mate'){
         if(probLoss==null||probLoss<=.065){
@@ -1297,13 +1317,51 @@ function analyzeReview(){
     renderReviewList();renderReviewDetail();
   }
   const verifyQueue=[];
-  function buildVerifyQueue(){for(let i=0;i<BOT_LOG.length;i++)if(needsPlayedVerification(i))verifyQueue.push(i);}
+  function buildVerifyQueue(){
+    for(let i=0;i<BOT_LOG.length;i++)if(needsPlayedVerification(i))verifyQueue.push(i);
+    if(eng&&verifyQueue.length===0)eng.textContent='No extra verification needed';
+  }
   function verifyNext(qi){
+    if(reviewFinalized)return;
     if(qi>=verifyQueue.length){finalize();return;}
+
     const i=verifyQueue[qi],e=BOT_LOG[i],depth=REVIEW_MODE==='deep'?(i<20?15:14):13;
     if(analysisCacheGet('played',e.fen,depth,e.uci))cachedHits++;
     updateProgress('Verifying key moves',qi+1,verifyQueue.length);
-    sfAnalyzePlayedMove(e.fen,e.uci,depth,res=>{if(res){const ev=infoWhiteEval(e.fen,res.info);evaluationPerspectiveSanity(e.fen,res.info,ev);playedResults[i]={eval:ev,info:res.info};}extraChecks++;verifyNext(qi+1);});
+
+    let settled=false;
+    const advance=res=>{
+      if(settled||reviewFinalized)return;
+      settled=true;
+      clearTimeout(queueWatchdog);
+      if(res){
+        const ev=infoWhiteEval(e.fen,res.info);
+        evaluationPerspectiveSanity(e.fen,res.info,ev);
+        playedResults[i]={eval:ev,info:res.info};
+      }
+      extraChecks++;
+      verifyNext(qi+1);
+    };
+
+    // This watchdog is deliberately outside sfAnalyzePlayedMove. It guarantees
+    // the REVIEW QUEUE advances even if a Worker message, retry, or bestmove
+    // callback is lost on mobile Safari.
+    const queueWatchdog=setTimeout(()=>{
+      console.warn('Review verification timed out; skipping move',i,e.san);
+      try{
+        clearTimeout(SF_TIMER);
+        SF_CB=null;SF_READY_CB=null;SF_LAST_INFO=null;SF_MULTI_INFO={};
+        SF?.postMessage('stop');
+      }catch(err){}
+      advance(null);
+    },REVIEW_MODE==='deep'?18000:12000);
+
+    try{
+      sfAnalyzePlayedMove(e.fen,e.uci,depth,res=>advance(res));
+    }catch(err){
+      console.warn('Review verification failed; skipping move',i,e.san,err);
+      advance(null);
+    }
   }
   function nextPosition(){
     if(positionIndex>=REVIEW_FENS.length){buildVerifyQueue();verifyNext(0);return;}
@@ -1414,7 +1472,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.14 loaded: practical opening grades + capped evals + richer moves 8-20 coaching');
+console.info('ChessTool V2.15 loaded: terminal-safe review verification + queue watchdog + guaranteed finalization');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
