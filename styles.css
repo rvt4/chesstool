@@ -183,3 +183,6 @@ nav{display:flex;gap:5px;flex-wrap:wrap}
   .booktag{font-size:.62rem}
   #midbotcard .skb{padding:7px 2px;font-size:.7rem}
 }
+
+#botcard .skrow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}
+@media(max-width:800px){#botcard .skb{font-size:.66rem;padding:7px 1px}}
