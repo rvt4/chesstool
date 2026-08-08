@@ -1,62 +1,43 @@
-# ChessTool V2.9
+# ChessTool V2.10
 
-Focused update for more realistic rated opponents and more useful early-middlegame feedback.
+Focused engine-analysis correction and stability update.
 
-## More human 1400–2000 opponents
+## Corrected evaluation perspective
+ChessTool's bundled `stockfish.js` build reports scores from White's perspective already. Earlier versions treated those scores as side-to-move scores and flipped the sign whenever Black was to move.
 
-V2.8's UCI Elo-limited bot could still match Stockfish's first choice far too often. V2.9 changes normal bot play to a MultiPV candidate model:
+That caused the recognizable opening pattern:
 
-- Stockfish generates several strong candidate moves.
-- 1400 samples more broadly among the top four.
-- 1600 samples among the top four with a stronger preference for #1.
-- 1800 samples mostly among the top three.
-- 2000 strongly favors the top move but can still choose a strong alternative.
-- Full remains full-strength.
+`-0.4 → +0.6 → -0.3 → +0.5`
 
-This creates plausible inaccuracies without intentionally choosing nonsense moves.
+even when both players were making normal moves.
 
-The V2.8 tactical-conversion layer remains above this system:
-- 1400 converts short forced mates (about M5 or shorter).
-- 1600 about M7.
-- 1800 about M10.
-- 2000 about M14.
-- Large forcing tactical wins can also override the humanized choice.
+V2.10 removes that incorrect sign flip. Positive values now consistently mean White is better; negative values mean Black is better.
 
-So the bot should make club-player positional errors while still finishing obvious wins.
+## More stable early-game review
+- Positions 1–10: depth 18
+- Positions 11–20: depth 17
+- Positions 21–40: depth 15
+- Later positions: depth 14
+- Played-move same-parent searches are also deeper through move 20.
+- When the same-parent search and resulting-position search still disagree materially, ChessTool explicitly flags that evaluation as approximate instead of silently presenting false precision.
 
-## Same-parent move accuracy through move 20
+The move grade continues to prefer the same-parent comparison through move 20.
 
-For the first 40 plies (move 20), Game Review now performs a second constrained Stockfish search for the move actually played.
+## Stricter Brilliant verification
+`‼ Brilliant` now requires all of the following:
+1. Stockfish's top move.
+2. Essentially no loss versus the best line.
+3. A meaningful non-pawn sacrifice.
+4. The principal variation actually shows the opponent accepting the offered piece.
+5. After acceptance, the mover is genuinely down at least about 2.5 pawns of material.
 
-Instead of grading a move only by comparing:
-`evaluation of position A` vs `separate evaluation of position B`
+This is meant to eliminate false Brilliant labels on moves that merely place a piece on an attacked square or permit an immediate equal recapture.
 
-ChessTool compares the engine's best line and the played move from the **same parent position**. This is specifically intended to reduce false opening labels caused by search-to-search evaluation drift, such as normal English repertoire moves being called inaccuracies.
-
-The displayed evaluation remains the evaluation of the resulting board position. The move grade uses the same-parent comparison when available.
-
-## Better explanations, especially moves 6–20
-
-Game Review now explains more than the label:
-- what the played move does;
-- what Stockfish preferred;
-- the practical purpose of the best move;
-- estimated winning-chance loss when meaningful;
-- central pawn commitments;
-- king-safety consequences of flank pawn moves;
-- development/queen-move considerations;
-- exchange consequences;
-- forcing-move calculation reminders.
-
-Moves 6–20 receive extra early-middlegame strategic prompts because this is the key training transition.
-
-## Better live middlegame coaching
-
-Train mode's middlegame feedback now includes:
-- the purpose of Stockfish's preferred move;
-- strategic goal;
-- key pawn break;
-- ideal piece setup;
-- opponent's plan/threat when you need to retry.
-
-All V2.8 mate conversion, legal engine gating, strict Brilliant verification, forced-mate grading, repertoire training, and middlegame blueprints remain intact.
+## Everything else retained
+- Humanized 1400 / 1600 / 1800 / 2000 bot choices.
+- Tactical mate/conversion override.
+- Unified opening → middlegame Train mode.
+- Full-strength feedback on your middlegame moves.
+- Rich move explanations and review navigation.
+- Forced-mate-aware grading.
+- Legal-engine-move validation.
