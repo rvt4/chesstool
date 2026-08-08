@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChessTool V2.7</title>
+<title>ChessTool V2.8</title>
 <link rel="stylesheet" href="styles.css">
 
 </head>
 <body>
 <header>
-  <div class="logo">♟ ChessTool <small>English · Caro-Kann · V2.7</small></div>
+  <div class="logo">♟ ChessTool <small>English · Caro-Kann · V2.8</small></div>
   <nav>
     <button class="nb on" onclick="setMode('drill')">Train</button>
     <button class="nb" onclick="setMode('bot')">vs Bot</button>
@@ -90,7 +90,7 @@
     <div class="card" id="midbotcard">
       <div class="ch">Middlegame Opponent</div>
       <div class="cb2">
-        <div style="font-size:.77rem;color:var(--muted);margin-bottom:7px">Approximate playing strength after the opening. Your moves are still checked by full-strength Stockfish.</div>
+        <div style="font-size:.77rem;color:var(--muted);margin-bottom:7px">Approximate playing strength after the opening. Short forced mates and obvious forcing tactics get a conversion override; your moves are still checked by full-strength Stockfish.</div>
         <div class="skrow">
           <button class="skb" id="ms0" onclick="setMidSkill(1400)">1400</button>
           <button class="skb on" id="ms1" onclick="setMidSkill(1600)">1600</button>
@@ -124,7 +124,7 @@
     <div class="card hidden" id="botcard">
       <div class="ch">Bot Settings</div>
       <div class="cb2" style="display:flex;flex-direction:column;gap:9px">
-        <div style="font-size:.77rem;color:var(--muted)">Skill</div>
+        <div style="font-size:.77rem;color:var(--muted)">Skill · normal play is rating-limited; short forced mates use a tactical conversion override</div>
         <div class="skrow">
           <button class="skb" id="sk0" onclick="setBotSkill(4,'1400')">1400</button>
           <button class="skb on" id="sk1" onclick="setBotSkill(10,'1600')">1600</button>
