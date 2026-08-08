@@ -59,7 +59,7 @@ let QUIZ_CORRECT=null;
 let QUIZ_DONE=false;
 let QUIZ_RESULT=null;
 // stockfish
-let SF=null,SF_CB=null,SF_READY=false,SF_FAILED=false,SF_TIMER=null;
+let SF=null,SF_CB=null,SF_READY=false,SF_FAILED=false,SF_TIMER=null,SF_READY_CB=null;
 let SF_ANALYSIS_QUEUE=Promise.resolve();
 let SF_LAST_INFO=null;
 let REVIEW_FENS=[],REVIEW_INDEX=0,REVIEW_RESULTS=[];
@@ -144,7 +144,11 @@ function currentPracticeLines(){
   return DLINES.filter(l=>SEL_LINES.has(l.id)&&l.color===SESSION_COLOR&&
     SANS.length<l.sans.length&&SANS.every((san,i)=>l.sans[i]===san));
 }
-
+function completedPracticeLines(){
+  if(!SESSION_STARTED)return[];
+  return DLINES.filter(l=>SEL_LINES.has(l.id)&&l.color===SESSION_COLOR&&
+    SANS.length===l.sans.length&&SANS.every((san,i)=>l.sans[i]===san));
+}
 function expectedPracticeMoves(){
   return [...new Set(currentPracticeLines().map(l=>l.sans[SANS.length]).filter(Boolean))];
 }
@@ -196,7 +200,7 @@ function onSqClick(rank,file){
 
   if(SEL){
     const hit=LDOTS.find(d=>d.r===rank&&d.f===file);
-    if(hit){if(MODE==='explorer'&&STUDY_PHASE==='middlegame')handleStudyMiddlegameMove(hit.uci);else handlePracticeMove(hit.uci);return;}
+    if(hit){if(STUDY_PHASE==='middlegame')handleStudyMiddlegameMove(hit.uci);else handlePracticeMove(hit.uci);return;}
     if(p&&friendly(p,turn)){SEL={r:rank,f:file};LDOTS=getLegalDots(rank,file);drawBoard();return;}
     SEL=null;LDOTS=[];drawBoard();return;
   }
@@ -218,6 +222,7 @@ function handlePracticeMove(uci){
   const beforeFen=FEN;
   const beforeHist=[...HIST],beforeSans=[...SANS];
   const expected=expectedPracticeMoves();
+  if(!expected.length&&completedPracticeLines().length){finishPracticeLine();return;}
   const san=uci2san(FEN,uci);
   const node=DB[FEN];
   const correct=expected.includes(san);
@@ -293,32 +298,53 @@ function startRandom(){
 }
 
 
-function findStudyPlan(){
-  // Prefer a plan whose stored structure is reached by the line just studied.
-  const matching=PLAN_DB.filter(p=>{
-    if((SESSION_COLOR==='white')!==(p.side==='White'))return false;
-    const n=Math.min(SANS.length,p.sans.length);
-    return n>=6&&SANS.slice(0,n).every((s,i)=>p.sans[i]===s);
-  });
-  if(matching.length)return matching.sort((a,b)=>b.sans.length-a.sans.length)[0];
-  // Fallback to the same repertoire side so Study never becomes a dead end.
-  const same=PLAN_DB.filter(p=>(SESSION_COLOR==='white')===(p.side==='White'));
-  return same[Math.floor(Math.random()*same.length)]||null;
+const PLAN_LINE_MAP={
+  'e-e5-4n':'eng-rev-sic','e-e5-cl':'eng-bot','e-sym':'eng-sym','e-hedge':'eng-hedge',
+  'e-grun':'eng-grun','e-kid':'eng-kid','e-e6':'eng-e6','e-c6':'eng-c6',
+  'e-dutch':'eng-dutch','e-b6':'eng-b6','ck-cls':'ck-class','ck-cls2':'ck-class',
+  'ck-adv':'ck-adv','ck-tal':'ck-adv','ck-panov':'ck-panov','ck-ex':'ck-exchange',
+  'ck-2k':'ck-two','ck-fan':'ck-fantasy','ck-hill':'ck-hill','ck-d3':'ck-d3'
+};
+function historyFromSans(sans){
+  const hist=[INIT];let fen=INIT;
+  for(const san of sans){const u=san2uci(fen,san);if(!u)break;fen=applyUci(fen,u);hist.push(fen);}
+  return hist;
 }
+function renderMiddlegamePanel(reveal){
+  const card=document.getElementById('planinfocard'),host=document.getElementById('planinfo');
+  if(!card||!host||!STUDY_PLAN)return;
+  card.classList.remove('hidden');
+  const hdr=document.getElementById('planinfoheader');if(hdr)hdr.textContent=MODE==='drill'?'Middlegame Recall':'Middlegame Blueprint';
+  if(MODE==='drill'&&!reveal){
+    host.innerHTML='<div class="midtitle">'+STUDY_PLAN.title+'</div><div class="midprompt"><strong>Plan recall:</strong> play the next phase without the blueprint. Before each move ask: what pawn break am I preparing, which piece needs improving, and what counterplay must I stop?</div><div class="tagrow"><span class="tag">Use Hint to reveal the blueprint</span></div>';
+  }else renderPlanInfo(STUDY_PLAN);
+}
+
+function findStudyPlan(){
+  const done=completedPracticeLines();
+  for(const line of done){
+    const p=PLAN_DB.find(x=>x.id===PLAN_LINE_MAP[line.id]);
+    if(p)return p;
+  }
+  return null;
+}
+
 function beginMiddlegameStudy(){
-  STUDY_PHASE='middlegame';STUDY_PLAN=findStudyPlan();
+  // Continue from the exact final opening position the learner just reached.
+  // The plan database supplies the strategic blueprint, not a replacement board.
+  STUDY_PLAN=findStudyPlan();STUDY_PHASE='middlegame';
   if(!STUDY_PLAN){finishPracticeLine(true);return;}
-  let pf=fenFromSans(STUDY_PLAN.sans);
-  FEN=pf;HIST=[pf];SANS=[...STUDY_PLAN.sans];SEL=null;LDOTS=[];LF=null;LT=null;
+  SEL=null;LDOTS=[];LF=null;LT=null;
   STUDY_PLAN_START_PLY=SANS.length;STUDY_PLAN_TARGET_PLY=STUDY_PLAN_START_PLY+20;
   FLIPPED=SESSION_COLOR==='black';PRACTICE_LOCK=false;SESSION_STARTED=true;
-  refreshPanel();drawBoard();drawMoveList();renderStudy();
-  const msg='MIDDLEGAME LAB: '+STUDY_PLAN.title+'. Play about 10 moves from here while applying the blueprint.';
-  setStat(msg,'info');setCoach(msg);
+  refreshPanel();drawBoard();drawMoveList();renderStudy();renderMiddlegamePanel(MODE==='explorer');
+  const msg=(MODE==='drill'?'MIDDLEGAME RECALL: ':'MIDDLEGAME LAB: ')+STUDY_PLAN.title+'. Opening complete — now play about 10 more moves from this exact position.';
+  setStat(msg,'info');
+  setCoach(MODE==='explorer'?msg+' Goal: '+STUDY_PLAN.goal+' Key breaks: '+STUDY_PLAN.breaks:msg+' Recall the plan before moving; Hint reveals the blueprint.');
   if(parseFen(FEN).turn!==(SESSION_COLOR==='white'?'w':'b'))setTimeout(studyPlanBotReply,350);
 }
 function studyPlanBotReply(){
-  if(MODE!=='explorer'||STUDY_PHASE!=='middlegame'||!SESSION_STARTED)return;
+  if((MODE!=='explorer'&&MODE!=='drill')||STUDY_PHASE!=='middlegame'||!SESSION_STARTED)return;
   const userTurn=SESSION_COLOR==='white'?'w':'b';
   if(parseFen(FEN).turn===userTurn)return;
   sfBestMove(FEN,12,uci=>{
@@ -342,15 +368,16 @@ function handleStudyMiddlegameMove(uci){
 }
 
 function finishPracticeLine(fromMiddlegame=false){
-  if(MODE==='explorer'&&!fromMiddlegame&&STUDY_PHASE==='opening'){beginMiddlegameStudy();return;}
+  if((MODE==='explorer'||MODE==='drill')&&!fromMiddlegame&&STUDY_PHASE==='opening'){beginMiddlegameStudy();return;}
   SESSION_STARTED=false;PRACTICE_LOCK=true;SEL=null;LDOTS=[];
   const msg=fromMiddlegame?'🏁 Middlegame lab complete. Start Session for another opening → plan sequence.':'🏁 Repertoire line complete. Start Session again for another randomized branch.';
   setStat(msg,'ok');setCoach(msg);renderStudy();drawBoard();
 }
 
 function practiceAutoReply(){
-  if(!SESSION_STARTED||PRACTICE_LOCK||(MODE!=='drill'&&MODE!=='explorer')||(MODE==='explorer'&&STUDY_PHASE==='middlegame'))return;
+  if(!SESSION_STARTED||PRACTICE_LOCK||(MODE!=='drill'&&MODE!=='explorer')||STUDY_PHASE==='middlegame')return;
   FLIPPED=SESSION_COLOR==='black';
+  if(completedPracticeLines().length){finishPracticeLine();return;}
   const{turn}=parseFen(FEN),userTurn=SESSION_COLOR==='white'?'w':'b';
   if(turn===userTurn){
     const moves=expectedPracticeMoves();
@@ -359,7 +386,10 @@ function practiceAutoReply(){
     renderStudy();drawBoard();return;
   }
   const lines=currentPracticeLines();
-  if(!lines.length){setStat('No selected line matches this position. Start a new session.','bad');return;}
+  if(!lines.length){
+    if(completedPracticeLines().length){finishPracticeLine();return;}
+    setStat('No selected line matches this position. Start a new session.','bad');return;
+  }
   const candidates=lines.map(l=>l.sans[SANS.length]).filter(Boolean);
   if(!candidates.length){finishPracticeLine();return;}
   // Pick a compatible line, not DB's first global move. This is what makes
@@ -370,6 +400,7 @@ function practiceAutoReply(){
   setLastUci(uci);
   const nf=applyUci(FEN,uci);FEN=nf;HIST.push(nf);SANS.push(san);SEL=null;LDOTS=[];
   refreshPanel();drawBoard();drawMoveList();renderStudy();
+  if(completedPracticeLines().length){setTimeout(()=>finishPracticeLine(),300);return;}
   setStat('Opponent played '+san+'. Your turn.','info');
   if(LAST_COACH)setCoach(LAST_COACH+'  •  Opponent: '+san+'.');
 }
@@ -377,6 +408,7 @@ function practiceAutoReply(){
 function doHint(){
   if(MODE==='bot'){setStat('No hints in bot mode.','bad');return;}
   if(!SESSION_STARTED){setStat('Start a training session first.','info');return;}
+  if(STUDY_PHASE==='middlegame'&&STUDY_PLAN){renderMiddlegamePanel(true);setCoach('Blueprint revealed: '+STUDY_PLAN.goal+' Pawn breaks: '+STUDY_PLAN.breaks);return;}
   const moves=expectedPracticeMoves();
   if(!moves.length){setStat('No more moves in this selected line.','info');return;}
   const node=DB[FEN];setStat('💡 '+explainExpectedMove(moves,node),'info');
@@ -395,7 +427,10 @@ function initSF(){
       SF=new Worker(URL.createObjectURL(blob));
       SF.onmessage=e=>{
         const msg=String(e.data||'');
-        if(msg==='readyok'||msg.includes('uciok'))SF_READY=true;
+        if(msg==='readyok'||msg.includes('uciok')){
+          SF_READY=true;
+          if(msg==='readyok'&&SF_READY_CB){const rcb=SF_READY_CB;SF_READY_CB=null;rcb();}
+        }
         if(msg.startsWith('info ')){
           const sm=msg.match(/score (cp|mate) (-?\d+)/);
           const pv=msg.match(/ pv (.+)$/);
@@ -559,28 +594,38 @@ function botThink(){
 }
 
 function endBot(){
-  BOT_ACTIVE=false;
-  setStat(inCheck(FEN,parseFen(FEN).turn)?'Checkmate!':'Game over! Click Review.','info');
+  BOT_ACTIVE=false;BOT_THINKING=false;
+  const turn=parseFen(FEN).turn,none=legalMoves(FEN).length===0,mate=none&&inCheck(FEN,turn);
+  const title=mate?'Checkmate':'Game over';
+  const result=mate?((turn==='w'?'Black':'White')+' wins by checkmate.'):(none?'Draw by stalemate.':'Game ended.');
+  setStat(title+' — '+result,'info');setCoach(title+' — '+result);
   document.getElementById('revbtn').classList.remove('hidden');
+  const ov=document.getElementById('gameoveroverlay');
+  if(ov){document.getElementById('gameovertitle').textContent=title;document.getElementById('gameovertext').textContent=result;ov.classList.remove('hidden');}
 }
 
 function sfAnalyzePosition(fen,cb){
-  // Review uses a real fixed-depth search. A short movetime search on mobile
-  // produced unstable opening scores and fake-looking precision in V2.3.
+  // Synchronize each search. A bestmove generated by a preceding `stop`
+  // must never be mistaken for the next position's result.
   if(!SF||SF_FAILED){cb(null);return;}
+  let finished=false;
+  const finish=res=>{
+    if(finished)return;finished=true;
+    clearTimeout(SF_TIMER);SF_READY_CB=null;SF_CB=null;cb(res);
+  };
   try{
+    SF_CB=null;SF_LAST_INFO=null;
     SF.postMessage('stop');
-    SF.postMessage('setoption name Skill Level value 20');
+    SF_READY_CB=()=>{
+      if(finished)return;
+      SF_LAST_INFO=null;
+      SF_CB=(move,info)=>finish({best:move,info});
+      SF.postMessage('position fen '+fen);
+      SF.postMessage('go depth 14');
+    };
     SF.postMessage('isready');
-    SF_LAST_INFO=null;
-    SF_CB=(move,info)=>cb({best:move,info});
-    SF.postMessage('position fen '+fen);
-    SF.postMessage('go depth 14');
-    clearTimeout(SF_TIMER);
-    SF_TIMER=setTimeout(()=>{
-      if(SF_CB){const done=SF_CB;SF_CB=null;SF_LAST_INFO=null;try{SF.postMessage('stop');}catch(e){}done(null);}
-    },12000);
-  }catch(e){SF_FAILED=true;SF=null;SF_CB=null;cb(null);}
+    SF_TIMER=setTimeout(()=>{try{SF.postMessage('stop');}catch(e){}finish(null);},14000);
+  }catch(e){SF_FAILED=true;try{SF?.terminate();}catch(x){}SF=null;finish(null);}
 }
 
 function infoWhiteEval(fen,info){
@@ -595,6 +640,7 @@ function infoWhiteEval(fen,info){
 }
 function evalText(ev){
   if(!ev)return'';
+  if(ev.terminal)return ev.stalemate?'Draw':'Checkmate';
   if(ev.kind==='mate')return(ev.value>0?'M':'-M')+Math.abs(ev.value);
   return(ev.value>=0?'+':'')+ev.value.toFixed(2);
 }
@@ -671,11 +717,18 @@ function renderReviewList(){
 }
 
 function renderReviewDetail(){
-  const pos=document.getElementById('reviewpos'),detail=document.getElementById('reviewdetail');if(!pos||!detail)return;
-  if(REVIEW_INDEX===0){pos.textContent='Starting position';detail.textContent='Use Next or tap a move to step through the game.';return;}
+  const pos=document.getElementById('reviewpos'),detail=document.getElementById('reviewdetail');
+  const dpos=document.getElementById('dockreviewpos'),ddetail=document.getElementById('dockreviewdetail');
+  if(REVIEW_INDEX===0){
+    if(pos)pos.textContent='Starting position';if(dpos)dpos.textContent='Starting position';
+    const t='Use Next or tap a move to step through the game.';
+    if(detail)detail.textContent=t;if(ddetail)ddetail.textContent=t;return;
+  }
   const i=REVIEW_INDEX-1,e=BOT_LOG[i],r=REVIEW_RESULTS[i]||{};
-  pos.textContent=reviewMoveLabel(i)+' · '+(e.byBot?'Bot':'You');
-  detail.innerHTML='<strong>'+(r.grade||'Analysis pending')+'</strong>'+(r.bestSan&&r.bestSan!==e.san?' · Best: '+r.bestSan:'')+(r.evalAfter!=null?' · Eval: '+evalText(r.evalAfter):'')+'<div class="reviewexplain">'+(r.explanation||'Analysis is still running…')+'</div>';
+  const title=reviewMoveLabel(i)+' · '+(e.byBot?'Bot':'You');
+  const html='<strong>'+(r.grade||'Analysis pending')+'</strong>'+(r.bestSan&&r.bestSan!==e.san?' · Best: '+r.bestSan:'')+(r.evalAfter!=null?' · Eval: '+evalText(r.evalAfter):'')+'<div class="reviewexplain">'+(r.explanation||'Analysis is still running…')+'</div>';
+  if(pos)pos.textContent=title;if(dpos)dpos.textContent=title;
+  if(detail)detail.innerHTML=html;if(ddetail)ddetail.innerHTML=html;
 }
 
 function reviewGo(idx){
@@ -713,11 +766,20 @@ function analyzeReview(){
         const bestSan=before?.best?uci2san(e.fen,before.best):'';
         const inBook=!!DB[e.fen]?.moves?.[e.san];
         const tag=inBook?' · Repertoire':'';
-        return{grade:g.label+tag,cls:g.cls,evalAfter:ea,bestSan,probLoss,explanation:reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,probLoss,true)};
+        const isMate=!!ea?.terminal&&!ea?.stalemate;
+        let explanation=reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,probLoss,true);
+        if(isMate)explanation+=' This move ends the game by checkmate.';
+        return{grade:(isMate?'Checkmate':g.label)+tag,cls:isMate?'rg':g.cls,evalAfter:ea,bestSan,probLoss,explanation};
       });
       if(eng)eng.textContent='Stockfish complete';renderReviewList();renderReviewDetail();return;
     }
     const fen=REVIEW_FENS[k],idx=k;
+    const tm=parseFen(fen).turn,lm=legalMoves(fen);
+    if(!lm.length){
+      if(inCheck(fen,tm))posResults[idx]={best:null,eval:{kind:'mate',value:tm==='w'?-1:1,terminal:true}};
+      else posResults[idx]={best:null,eval:{kind:'cp',value:0,terminal:true,stalemate:true}};
+      k++;if(eng)eng.textContent='Stockfish '+Math.round(100*k/REVIEW_FENS.length)+'%';next();return;
+    }
     sfAnalyzePosition(fen,res=>{
       posResults[idx]=res?{best:res.best,eval:infoWhiteEval(fen,res.info)}:{best:null,eval:null};
       k++;if(eng)eng.textContent='Stockfish '+Math.round(100*k/REVIEW_FENS.length)+'%';next();
@@ -730,6 +792,9 @@ function showReview(){
   if(!BOT_LOG.length){setStat('No game to review.','bad');return;}
   BOT_ACTIVE=false;REVIEW_FENS=buildReviewFens();REVIEW_RESULTS=[];REVIEW_INDEX=0;
   document.getElementById('revcard').classList.remove('hidden');
+  document.getElementById('reviewdock')?.classList.remove('hidden');
+  document.getElementById('playhud')?.classList.add('hidden');
+  document.getElementById('gameoveroverlay')?.classList.add('hidden');
   renderReviewList();reviewGo(0);analyzeReview();
 }
 
@@ -770,6 +835,10 @@ function goBack(){
 function fullReset(){
   FEN=INIT;HIST=[INIT];SANS=[];SEL=null;LDOTS=[];LF=null;LT=null;
   BOT_ACTIVE=false;BOT_LOG=[];
+  document.getElementById('gameoveroverlay')?.classList.add('hidden');
+  document.getElementById('reviewdock')?.classList.add('hidden');
+  document.getElementById('playhud')?.classList.remove('hidden');
+  document.getElementById('planinfocard')?.classList.add('hidden');
   refreshPanel();drawBoard();drawMoveList();
 }
 
@@ -807,7 +876,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.4 loaded: depth-14 review + stronger bot + opening-to-middlegame Study Lab');
+console.info('ChessTool V2.5 loaded: depth-14 review + stronger bot + opening-to-middlegame Study Lab');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
