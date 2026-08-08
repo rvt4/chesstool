@@ -875,13 +875,11 @@ function sfAnalyzePosition(fen,cb){sfAnalyzePositionDepth(fen,14,cb);}
 
 function infoWhiteEval(fen,info){
   if(!info)return null;
-  const stm=parseFen(fen).turn;
-  if(info.type==='mate'){
-    const whiteMate=stm==='w'?info.value:-info.value;
-    return{kind:'mate',value:whiteMate};
-  }
-  const cp=stm==='w'?info.value:-info.value;
-  return{kind:'cp',value:cp/100};
+  // IMPORTANT: the stockfish.js build used by ChessTool reports scores from
+  // White's perspective already. V2.9 incorrectly flipped the sign whenever
+  // Black was to move, creating the telltale -/+/-/+ evaluation oscillation.
+  if(info.type==='mate')return{kind:'mate',value:info.value};
+  return{kind:'cp',value:info.value/100};
 }
 function evalText(ev){
   if(!ev)return'';
@@ -913,6 +911,27 @@ const MOVE_CLASS_META={
 function moverWinProb(ev,side){
   const w=whiteWinProb(ev);if(w==null)return null;return side==='w'?w:1-w;
 }
+function materialBalanceForSide(fen,side){
+  const {bd}=parseFen(fen);let w=0,b=0;
+  for(let r=0;r<8;r++)for(let f=0;f<8;f++){
+    const pc=GP(bd,r,f);if(!pc)continue;
+    const v=materialValue(pc);
+    if(isW(pc))w+=v;else b+=v;
+  }
+  return side==='w'?w-b:b-w;
+}
+function acceptedSacrificeMaterialLoss(entry,beforeFen,pv){
+  if(!Array.isArray(pv)||pv.length<2||pv[0]!==entry.uci)return 0;
+  const mover=parseFen(beforeFen).turn;
+  const afterMove=applyUci(beforeFen,entry.uci);
+  const reply=pv[1];
+  if(!isLegalEngineMove(afterMove,reply)||reply.slice(2,4)!==entry.uci.slice(2,4))return 0;
+  const beforeBal=materialBalanceForSide(beforeFen,mover);
+  const afterAccept=applyUci(afterMove,reply);
+  const afterBal=materialBalanceForSide(afterAccept,mover);
+  return beforeBal-afterBal;
+}
+
 function isSacrificeCandidate(entry,beforeFen,afterFen){
   const {bd,turn}=parseFen(beforeFen);
   const ff=entry.uci.charCodeAt(0)-97,fr=+entry.uci[1]-1,tf=entry.uci.charCodeAt(2)-97,tr=+entry.uci[3]-1;
@@ -980,7 +999,9 @@ function classifyMove({entry,beforeFen,afterFen,bestUci,beforeEval,afterEval,pro
     return{label:'Miss',...MOVE_CLASS_META.Miss};
 
   const pv=beforeInfo?.pv||[];
-  if(best&&probLoss<=.01&&isSacrificeCandidate(entry,beforeFen,afterFen)&&pvAcceptsSacrifice(entry,beforeFen,pv))
+  const acceptedLoss=acceptedSacrificeMaterialLoss(entry,beforeFen,pv);
+  if(best&&probLoss<=.008&&isSacrificeCandidate(entry,beforeFen,afterFen)&&
+     pvAcceptsSacrifice(entry,beforeFen,pv)&&acceptedLoss>=250)
     return{label:'Brilliant',...MOVE_CLASS_META.Brilliant};
 
   if(best&&afterMate)return{label:'Great',...MOVE_CLASS_META.Great};
@@ -1138,6 +1159,18 @@ function reviewGo(idx){
 }
 function reviewStep(delta){reviewGo(REVIEW_INDEX+delta);}
 
+function evalDrift(a,b){
+  if(!a||!b||a.kind!=='cp'||b.kind!=='cp')return 0;
+  return Math.abs(a.value-b.value);
+}
+function reviewStabilityNote(playedEval,resultEval,plyIndex){
+  if(plyIndex>=40)return'';
+  const drift=evalDrift(playedEval,resultEval);
+  if(drift>=1.0)return' Engine searches disagreed by about '+drift.toFixed(1)+' pawns here, so treat the displayed board evaluation as approximate; the move grade uses the same-parent search.';
+  if(drift>=.55)return' The two engine searches differed moderately here; the move grade uses the more reliable same-parent comparison.';
+  return'';
+}
+
 function analyzeReview(){
   const eng=document.getElementById('reviewengine');
   if(!SF||SF_FAILED){
@@ -1172,7 +1205,8 @@ function analyzeReview(){
         c={label:'Good',...MOVE_CLASS_META.Good};
       }
       const bestSan=bestUci?uci2san(e.fen,bestUci):'';
-      const explanation=reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,probLoss,true,c.label,i);
+      let explanation=reviewExplanation(e,REVIEW_FENS[i],REVIEW_FENS[i+1],bestSan,probLoss,true,c.label,i);
+      explanation+=reviewStabilityNote(qualityAfter,displayAfter,i);
       return{grade:c.label,icon:c.icon,cls:c.cls,inBook,evalAfter:displayAfter,bestSan,probLoss,explanation,sameParent:!!played};
     });
     if(eng)eng.textContent='Stockfish complete';
@@ -1183,7 +1217,7 @@ function analyzeReview(){
     const limit=Math.min(BOT_LOG.length,40); // through move 20
     if(j>=limit){finalize();return;}
     const e=BOT_LOG[j];
-    const depth=j<20?13:12;
+    const depth=j<20?15:14;
     if(eng)eng.textContent='Move accuracy '+Math.round(100*j/Math.max(1,limit))+'%';
     sfAnalyzePlayedMove(e.fen,e.uci,depth,res=>{
       playedResults[j]=res?{eval:infoWhiteEval(e.fen,res.info),info:res.info}:null;
@@ -1200,7 +1234,7 @@ function analyzeReview(){
       else posResults[idx]={best:null,eval:{kind:'cp',value:0,terminal:true,stalemate:true}};
       k++;if(eng)eng.textContent='Position analysis '+Math.round(100*k/REVIEW_FENS.length)+'%';next();return;
     }
-    const reviewDepth=idx<10?16:(idx<20?15:14);
+    const reviewDepth=idx<10?18:(idx<20?17:(idx<40?15:14));
     sfAnalyzePositionDepth(fen,reviewDepth,res=>{
       posResults[idx]=res?{best:res.best,eval:infoWhiteEval(fen,res.info),info:res.info}:{best:null,eval:null,info:null};
       k++;if(eng)eng.textContent='Position analysis '+Math.round(100*k/REVIEW_FENS.length)+'%';next();
@@ -1307,7 +1341,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.9 loaded: humanized rated bot + same-parent review grading + richer middlegame explanations');
+console.info('ChessTool V2.10 loaded: corrected score perspective + stable early review + stricter brilliant verification');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
