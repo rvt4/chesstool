@@ -74,6 +74,7 @@ function isRepertoireMove(fen,san){return repertoireMoveStatus(fen,san).inBook;}
 const MISTAKE_LOG_KEY='chesstool_mistake_log_v1';
 const MISTAKE_LOG_MAX_GAMES=60;
 let TREND_FILTER='';
+let MISTAKE_REPLAY=null; // {gameId,ply,fen,bestUci,bestSan,playedSan,move,attempts}
 function loadMistakeLog(){
   try{const x=JSON.parse(localStorage.getItem(MISTAKE_LOG_KEY)||'[]');return Array.isArray(x)?x:[];}catch(e){return[];}
 }
@@ -208,9 +209,38 @@ function normalizedTrendErrors(){
 function trendView(category){TREND_FILTER=TREND_FILTER===category?'':category;renderMistakeTrends();}
 function trendViewPosition(gameId,ply){
   const g=MISTAKE_GAMES.find(x=>x.id===gameId),e=g?.errors?.find(x=>x.ply===ply);if(!e?.fen)return;
-  FEN=e.fen;FLIPPED=g.color==='black';SEL=null;LDOTS=[];setLastUci(null);refreshPanel();drawBoard();
-  setCoach('Mistake replay · '+e.move+' '+e.san+'. Find a stronger move'+(e.best?' — engine best was '+e.best:'')+'.');
+  const bestUci=e.best?san2uci(e.fen,e.best):null;
+  MISTAKE_REPLAY={gameId,ply,fen:e.fen,bestUci,bestSan:e.best||'',playedSan:e.san||'',move:e.move||'',attempts:0};
+  BOT_ACTIVE=false;BOT_THINKING=false;PRACTICE_LOCK=false;
+  FEN=e.fen;HIST=[e.fen];SANS=[];FLIPPED=g.color==='black';SEL=null;LDOTS=[];LF=null;LT=null;
+  refreshPanel();drawBoard();drawMoveList();
+  const prompt='Replay '+e.move+' '+e.san+'. You are back at the position before the mistake. Find a stronger move.';
+  setStat(prompt,'info');setCoach(prompt);
   document.getElementById('board')?.scrollIntoView({behavior:'smooth',block:'center'});
+}
+function mistakeReplayClick(rank,file){
+  if(!MISTAKE_REPLAY)return;
+  const {bd,turn}=parseFen(FEN),p=GP(bd,rank,file);
+  if(SEL){
+    const hit=LDOTS.find(d=>d.r===rank&&d.f===file);
+    if(hit){handleMistakeReplayMove(hit.uci);return;}
+    if(p&&friendly(p,turn)){SEL={r:rank,f:file};LDOTS=getLegalDots(rank,file);drawBoard();return;}
+    SEL=null;LDOTS=[];drawBoard();return;
+  }
+  if(p&&friendly(p,turn)){SEL={r:rank,f:file};LDOTS=getLegalDots(rank,file);drawBoard();}
+}
+function handleMistakeReplayMove(uci){
+  const r=MISTAKE_REPLAY;if(!r)return;
+  const san=uci2san(FEN,uci);r.attempts++;
+  const correct=r.bestUci&&uci===r.bestUci;
+  setLastUci(uci);FEN=applyUci(FEN,uci);SEL=null;LDOTS=[];drawBoard();
+  if(correct){
+    const msg='✓ Correct — '+san+' was the engine best move here. You fixed '+r.move+' '+r.playedSan+(r.attempts>1?' after '+r.attempts+' tries.':'.');
+    setStat(msg,'ok');setCoach(msg);MISTAKE_REPLAY=null;return;
+  }
+  const msg='Not quite — '+san+' is legal, but there is a stronger move in this position. Try again.';
+  setStat(msg,'bad');setCoach(msg);
+  setTimeout(()=>{if(!MISTAKE_REPLAY)return;FEN=r.fen;SEL=null;LDOTS=[];LF=null;LT=null;refreshPanel();drawBoard();},900);
 }
 function renderMistakeTrends(){
   const host=document.getElementById('mistaketrends');if(!host)return;
@@ -459,6 +489,7 @@ function renderIntegratedPlan(){
 }
 
 function onSqClick(rank,file){
+  if(MISTAKE_REPLAY){mistakeReplayClick(rank,file);return;}
   if(MODE==='bot'){botClick(rank,file);return;}
   if(MODE!=='drill')return;
   if(!SESSION_STARTED||PRACTICE_LOCK)return;
@@ -1843,6 +1874,7 @@ function goBack(){
 
 // fullReset resets position but NOT FLIPPED — FLIPPED is only changed by explicit user actions
 function fullReset(){
+  MISTAKE_REPLAY=null;
   FEN=INIT;HIST=[INIT];SANS=[];SEL=null;LDOTS=[];LF=null;LT=null;
   BOT_ACTIVE=false;BOT_LOG=[];
   document.getElementById('gameoveroverlay')?.classList.add('hidden');
@@ -1865,6 +1897,7 @@ function doFlip(){FLIPPED=!FLIPPED;drawBoard();}
 
 // ─── MODE SWITCHING ───────────────────────────────────────────────────────────
 function setMode(mode){
+  MISTAKE_REPLAY=null;
   MODE=mode;BOT_ACTIVE=false;SEL=null;LDOTS=[];SESSION_STARTED=false;PRACTICE_LOCK=false;STUDY_PHASE='opening';STUDY_PLAN=null;MID_FEEDBACK='';MID_PRE_ANALYSIS=null;
   document.querySelectorAll('.nb').forEach((b,i)=>b.classList.toggle('on',['drill','bot'][i]===mode));
   show('linecard',mode==='drill');
@@ -1897,7 +1930,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.19 loaded: deeper repertoire + persistent mistake trends + missed-mate coaching');
+console.info('ChessTool V2.22 loaded: working mistake replay + improved Mistake Coach');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
