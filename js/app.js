@@ -166,10 +166,19 @@ function mistakeCategory(entry,beforeFen,afterFen,grade,explanation,beforeEval,a
 
     if(P==='R')return'Rook placement / coordination';
     if(P==='N'||P==='B')return'Piece activity / coordination';
+    if(P==='K')return'King placement / safety';
+    if(P==='Q')return'Queen placement / coordination';
   }catch(e){}
 
+  // Prefer a concrete chess diagnosis over the old catch-all "Decision quality".
+  // Captures usually represent calculation/exchange choices; quiet moves that
+  // cannot be identified more specifically remain a positional-decision bucket.
+  try{
+    const {bd}=parseFen(beforeFen),to=entry.uci.slice(2,4),tf=to.charCodeAt(0)-97,tr=+to[1]-1;
+    if(GP(bd,tr,tf))return'Calculation / exchanges';
+  }catch(e){}
   if(impact>=1.5||grade==='Blunder')return'Tactical oversight';
-  return'Decision quality';
+  return'Positional decision / plan';
 }
 function gameFingerprint(){return BOT_LOG.map(e=>e.uci).join('-');}
 function reviewedGameResult(){
@@ -286,8 +295,19 @@ function renderMistakeTrends(){
   }).join(''):'<div class="trendempty">No matching mistakes.</div>';
 
   const focus=ranked[0];
+  const focusAdvice={
+    'Rook placement / coordination':'Before moving a rook, check what it protects, what attacks it will face, and whether the other rook belongs on that file instead.',
+    'Pawn break / central decision':'Before changing the center, calculate the opponent’s forcing reply and decide whether the pawn break improves your pieces or theirs.',
+    'Premature attack / pawn weakening':'Before pushing an attacking pawn, check the squares and king cover you permanently give up.',
+    'Calculation / exchanges':'Before committing to a capture or exchange, calculate the full forcing sequence through the final recapture.',
+    'Hanging / undefended piece':'Before every move, scan your loose pieces and the opponent’s forcing captures.',
+    'Piece activity / coordination':'Ask which piece is worst placed and whether your move improves the whole position rather than one piece.',
+    'King placement / safety':'Before moving the king, check forcing checks, open files, and whether the destination reduces your escape squares.',
+    'Positional decision / plan':'When there is no forcing tactic, identify your worst piece, the opponent’s threat, and the pawn break you are playing toward.',
+    'Tactical oversight':'Before committing, scan checks, captures, and threats for both sides.'
+  };
   const focusText=focus
-    ? 'Current focus: <b>'+focus[0]+'</b>. It represents about '+Math.round(focus[1].focus/totalFocus*100)+'% of your severity- and recency-weighted mistake impact.'
+    ? 'Current focus: <b>'+focus[0]+'</b>. It represents about '+Math.round(focus[1].focus/totalFocus*100)+'% of your severity- and recency-weighted mistake impact. '+(focusAdvice[focus[0]]||'Pause before committing and compare your candidate move with the opponent’s strongest forcing reply.')
     : '';
 
   host.innerHTML=
@@ -1356,7 +1376,11 @@ function classifyMove({entry,beforeFen,afterFen,bestUci,beforeEval,afterEval,pro
 
   const pv=beforeInfo?.pv||[];
   const acceptedLoss=acceptedSacrificeMaterialLoss(entry,beforeFen,pv);
-  if(best&&probLoss<=.008&&isSacrificeCandidate(entry,beforeFen,afterFen)&&
+  // Brilliant is reserved for a sound, accepted sacrifice in a position where
+  // the move still matters to the practical result. Do not award it for a
+  // forced/best resource when the mover is already completely lost.
+  const brilliantContext=beforeP!=null&&beforeP>=.08;
+  if(best&&brilliantContext&&probLoss<=.008&&isSacrificeCandidate(entry,beforeFen,afterFen)&&
      pvAcceptsSacrifice(entry,beforeFen,pv)&&acceptedLoss>=250)
     return{label:'Brilliant',...MOVE_CLASS_META.Brilliant};
 
@@ -1930,7 +1954,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.22 loaded: working mistake replay + improved Mistake Coach');
+console.info('ChessTool V2.23 loaded: contextual Brilliant + sharper Mistake Coach');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
