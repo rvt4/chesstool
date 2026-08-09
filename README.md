@@ -1,4 +1,4 @@
-# ChessTool V2.22
+# ChessTool V2.23
 
 Targeted Mistake Coach / replay update.
 
@@ -17,3 +17,9 @@ The Replay button now enters a dedicated correction mode instead of only changin
 - Game-phase cards now keep the phase name and impact percentage on separate lines on mobile.
 
 V2.21's meaningful-error thresholds, severity/recency weighting, persistent local history, repertoire data, bot behavior, review engine, and middlegame training remain intact.
+
+
+## V2.23
+- Brilliant moves now require meaningful practical result context; best sacrifices in already-lost positions are no longer labeled Brilliant.
+- Replaced the generic Decision quality fallback with more concrete king, queen, exchange, tactical, and positional-plan diagnoses.
+- Current Focus now includes a habit-specific training cue so the trend tracker teaches the underlying decision process.
