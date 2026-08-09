@@ -1,51 +1,19 @@
-# ChessTool V2.21
+# ChessTool V2.22
 
-Focused Mistake Coach accuracy update.
+Targeted Mistake Coach / replay update.
 
-## Fixed false "King safety / mate threat" trend
-V2.20 searched explanation text for the substring `mate`. That accidentally matched
-words such as `estimated`, causing unrelated mistakes to be dumped into the king-safety
-bucket.
+## Replay now actually works
+The Replay button now enters a dedicated correction mode instead of only changing the board position. This fixes the old conflict where VS BOT click handling ignored board input after a completed game.
 
-V2.21 only uses actual mate engine states or whole-word mate/checkmate language.
+- Replay restores the exact position immediately before the saved mistake.
+- Pieces are movable normally and all legal moves can be attempted.
+- A wrong correction is shown on the board, gets immediate feedback, then resets to the key position so you can try again.
+- The saved engine-best move is the correction target.
+- A correct move is confirmed and the replay exercise ends.
+- Replay works even though the original bot game is already over.
+- Starting/resetting another mode safely exits replay mode.
 
-## Smarter categories
-Mistakes are now classified into more specific habits:
-- Missed forced mate
-- King safety / mate threat
-- Hanging / undefended piece
-- Calculation / exchanges
-- Missed opponent threat
-- Missed tactic
-- Premature queen move / tempo
-- Pawn break / central decision
-- Premature attack / pawn weakening
-- Pawn / endgame technique
-- Rook placement / coordination
-- Piece activity / coordination
-- Tactical oversight
-- Decision quality
+## Mistake Trends UI
+- Game-phase cards now keep the phase name and impact percentage on separate lines on mobile.
 
-## Less noise
-Long-term Mistake Trends no longer save every tiny engine inaccuracy.
-- Inaccuracies must cost roughly 0.75 pawns or more to enter the trend log.
-- Mistakes must have a meaningful impact.
-- Book moves are never logged as mistakes.
-
-The full Game Review still shows all engine labels; this filter only affects the
-persistent habit tracker.
-
-## Better severity and focus
-Trend importance is now driven primarily by actual evaluation impact, then adjusted
-for the move label and recency.
-
-One game-changing blunder should outweigh several small inaccuracies.
-
-The Current Focus uses severity × recency rather than raw count alone.
-
-## Existing V2.20 data
-Stored history is re-normalized when displayed so old V2.20 categories do not continue
-to dominate the trends simply because they were saved under the old taxonomy.
-
-All V2.20 replay, phase tracking, review engine, bot behavior, Book handling, and
-middlegame training remain unchanged.
+V2.21's meaningful-error thresholds, severity/recency weighting, persistent local history, repertoire data, bot behavior, review engine, and middlegame training remain intact.

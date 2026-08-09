@@ -213,3 +213,6 @@ nav{display:flex;gap:5px;flex-wrap:wrap}
 .phasepill{border:1px solid var(--bdr);border-radius:5px;padding:7px;text-align:center}.phasepill b{display:block;color:var(--acc);font-size:.9rem}.phasepill span{font-size:.61rem;color:var(--muted)}
 .recenterr>div{display:flex;flex-direction:column;min-width:0;flex:1}.recenterr .mini{align-self:center;flex:0 0 auto}
 .tinyclear{border:0;background:none;color:var(--acc);font:inherit;text-transform:none;letter-spacing:0;padding:0 0 0 5px}
+/* V2.22 Mistake Coach polish */
+.phasepill{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:58px}
+.phasepill b,.phasepill span{display:block;line-height:1.2}
