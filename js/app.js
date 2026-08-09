@@ -108,12 +108,63 @@ function severityWeight(grade,impact){
   if(imp>=12)return 12;                 // mate / missed forced mate
   return +(g+Math.min(8,imp)*1.15).toFixed(2);
 }
-function shouldLogMistake(grade,impact,inBook){
+function evalForMover(ev,mover){
+  if(!ev)return null;
+  if(ev.kind==='mate'){
+    const good=(mover==='w'&&ev.value>0)||(mover==='b'&&ev.value<0);
+    return good?100:-100;
+  }
+  if(ev.kind==='cp')return mover==='w'?ev.value:-ev.value;
+  return null;
+}
+function alreadyDecisivelyLost(beforeEval,mover){
+  const v=evalForMover(beforeEval,mover);
+  return v!=null&&v<=-6;
+}
+function shouldLogMistake(grade,impact,inBook,beforeEval=null,afterEval=null,mover=null){
   if(!['Inaccuracy','Mistake','Miss','Blunder'].includes(grade))return false;
   if(inBook)return false; // Book is never a mistake category.
+
+  // Garbage-time filter: once the mover is already decisively lost, later
+  // engine-label noise should not become a permanent bad habit. The moves
+  // that CAUSED the collapse remain logged because their before-eval was not lost.
+  if(mover&&alreadyDecisivelyLost(beforeEval,mover))return false;
+
   if(grade==='Inaccuracy')return impact>=.75; // filter engine-noise inaccuracies
   if(grade==='Mistake')return impact>=.45;
   return true;
+}
+function mistakeTheme(category){
+  const map={
+    'Rook placement / coordination':'Coordination & threat awareness',
+    'Piece activity / coordination':'Coordination & threat awareness',
+    'Queen placement / coordination':'Coordination & threat awareness',
+    'Hanging / undefended piece':'Coordination & threat awareness',
+    'Missed opponent threat':'Coordination & threat awareness',
+    'Tactical oversight':'Calculation & forcing moves',
+    'Calculation / exchanges':'Calculation & forcing moves',
+    'Missed tactic':'Calculation & forcing moves',
+    'Missed forced mate':'Calculation & forcing moves',
+    'King safety / mate threat':'King safety & forcing threats',
+    'King placement / safety':'King safety & forcing threats',
+    'Central pawn / structure decision':'Pawn structure & timing',
+    'Pawn structure / technique':'Pawn structure & timing',
+    'Pawn / endgame technique':'Pawn structure & timing',
+    'Premature attack / pawn weakening':'Pawn structure & timing',
+    'Premature queen move / tempo':'Planning & tempi',
+    'Positional decision / plan':'Planning & tempi'
+  };
+  return map[category]||'Planning & tempi';
+}
+function themeAdvice(theme){
+  const advice={
+    'Coordination & threat awareness':'Before making an active-looking move, identify the opponent’s strongest check, capture, and threat. Then ask whether your move improves the whole position without leaving a defender, file, diagonal, or piece overloaded.',
+    'Calculation & forcing moves':'Before committing, calculate checks and captures for both sides through the end of the forcing sequence—not just your first idea.',
+    'King safety & forcing threats':'Before changing king safety, scan checks, mating nets, open files/diagonals, and escape squares.',
+    'Pawn structure & timing':'Before a pawn move, ask what squares, files, and piece routes it changes permanently, and whether the timing helps your pieces more than the opponent’s.',
+    'Planning & tempi':'When there is no forcing tactic, improve the worst piece and avoid spending a tempo on a move that does not address the opponent’s plan.'
+  };
+  return advice[theme]||'Pause before committing and compare your move with the opponent’s strongest forcing reply.';
 }
 function exactTacticalText(txt,words){
   return words.some(w=>txt.includes(w));
@@ -158,9 +209,9 @@ function mistakeCategory(entry,beforeFen,afterFen,grade,explanation,beforeEval,a
       if(['f','g','h'].includes(to[0])){
         // Pawn pushes near the king deserve their own bucket instead of being
         // mislabeled as generic king-safety errors.
-        return moveNo<=30?'Premature attack / pawn weakening':'Pawn / endgame technique';
+        return moveNo<=30?'Premature attack / pawn weakening':(mistakePhase(plyIndex,false)==='Endgame'?'Pawn / endgame technique':'Pawn structure / technique');
       }
-      if(['c','d','e'].includes(to[0])&&moveNo<=22)return'Pawn break / central decision';
+      if(['c','d','e'].includes(to[0])&&moveNo<=22)return'Central pawn / structure decision';
       if(moveNo>35)return'Pawn / endgame technique';
     }
 
@@ -190,9 +241,9 @@ function saveMistakeTrends(){
   BOT_LOG.forEach((e,i)=>{
     if(e.byBot)return;const r=REVIEW_RESULTS[i];if(!r||!['Inaccuracy','Mistake','Miss','Blunder'].includes(r.grade))return;
     const before=REVIEW_FENS[i],after=REVIEW_FENS[i+1],mover=parseFen(before).turn,impact=evalImpact(r.beforeEval||null,r.qualityAfter||null,mover,r.grade),inBook=!!r.inBook;
-    if(!shouldLogMistake(r.grade,impact,inBook))return;
+    if(!shouldLogMistake(r.grade,impact,inBook,r.beforeEval||null,r.qualityAfter||null,mover))return;
     const category=mistakeCategory(e,before,after,r.grade,r.explanation,r.beforeEval||null,r.qualityAfter||null,i,impact);
-    errors.push({move:reviewMoveLabel(i),san:e.san,grade:r.grade,category,phase:mistakePhase(i,inBook),impact:+impact.toFixed(2),weight:severityWeight(r.grade,impact),best:r.bestSan||'',explanation:(r.explanation||'').slice(0,420),fen:before,ply:i,ts:Date.now()});
+    errors.push({move:reviewMoveLabel(i),san:e.san,grade:r.grade,category,theme:mistakeTheme(category),phase:mistakePhase(i,inBook),impact:+impact.toFixed(2),weight:severityWeight(r.grade,impact),best:r.bestSan||'',explanation:(r.explanation||'').slice(0,420),fen:before,ply:i,ts:Date.now(),beforeEval:r.beforeEval||null,afterEval:r.qualityAfter||null,mover});
   });
   const game={id:fp,ts:Date.now(),bot:BOT_LABEL,color:BOT_GAME_COLOR,result:reviewedGameResult(),errors};
   const existing=MISTAKE_GAMES.findIndex(g=>g.id===fp);if(existing>=0)MISTAKE_GAMES[existing]=game;else MISTAKE_GAMES.push(game);
@@ -201,20 +252,26 @@ function saveMistakeTrends(){
 function normalizedTrendErrors(){
   return MISTAKE_GAMES.flatMap(g=>(g.errors||[]).map(x=>{
     const impact=Number.isFinite(x.impact)?x.impact:({Inaccuracy:.5,Mistake:1.5,Miss:2.5,Blunder:3.5}[x.grade]||.5);
-    // Existing V2.20 records are reclassified when enough stored data exists.
-    let category=x.category||'Decision quality';
+    let category=x.category||'Positional decision / plan';
+
+    // Normalize old category names and, where possible, re-run the current
+    // semantic classifier from the saved position.
+    if(category==='Pawn break / central decision')category='Central pawn / structure decision';
+    if(category==='Decision quality')category='Positional decision / plan';
     if(x.fen&&Number.isFinite(x.ply)&&x.san){
       try{
         const u=san2uci(x.fen,x.san);
         if(u){
           const after=applyUci(x.fen,u);
-          category=mistakeCategory({uci:u,san:x.san},x.fen,after,x.grade,x.explanation||'',null,null,x.ply,impact);
+          category=mistakeCategory({uci:u,san:x.san},x.fen,after,x.grade,x.explanation||'',x.beforeEval||null,x.afterEval||null,x.ply,impact);
         }
       }catch(e){}
     }
-    return {...x,category,gameTs:g.ts,gameId:g.id,bot:g.bot,phase:x.phase||mistakePhase(x.ply||0,false),impact,weight:severityWeight(x.grade,impact)};
-  }).filter(x=>shouldLogMistake(x.grade,x.impact,false)));
+    const mover=x.mover||(x.fen?parseFen(x.fen).turn:null);
+    return {...x,category,theme:mistakeTheme(category),gameTs:g.ts,gameId:g.id,bot:g.bot,phase:x.phase||mistakePhase(x.ply||0,false),impact,weight:severityWeight(x.grade,impact),mover};
+  }).filter(x=>shouldLogMistake(x.grade,x.impact,false,x.beforeEval||null,x.afterEval||null,x.mover||null)));
 }
+
 function trendView(category){TREND_FILTER=TREND_FILTER===category?'':category;renderMistakeTrends();}
 function trendViewPosition(gameId,ply){
   const g=MISTAKE_GAMES.find(x=>x.id===gameId),e=g?.errors?.find(x=>x.ply===ply);if(!e?.fen)return;
@@ -258,30 +315,53 @@ function renderMistakeTrends(){
   if(!all.length){host.innerHTML='<div class="trendstats"><span><b>'+games.length+'</b> games</span><span><b>0</b> meaningful errors</span><span><b>0</b> serious</span></div><div class="trendempty">No meaningful mistakes have cleared the long-term trend threshold yet.</div>';return;}
 
   const newest=Math.max(...games.map(g=>g.ts||0),Date.now());
-  const byCat={};
+  const byCat={},byTheme={};
   all.forEach(x=>{
     const ageDays=Math.max(0,(newest-(x.ts||x.gameTs||newest))/86400000);
     const recency=Math.max(.65,1-Math.min(30,ageDays)*.012);
-    const o=byCat[x.category]||(byCat[x.category]={n:0,w:0,focus:0,serious:0});
-    o.n++;o.w+=x.weight;o.focus+=x.weight*recency;
-    o.serious+=['Mistake','Miss','Blunder'].includes(x.grade)?1:0;
+
+    const c=byCat[x.category]||(byCat[x.category]={n:0,w:0,focus:0,serious:0,games:new Set()});
+    c.n++;c.w+=x.weight;c.focus+=x.weight*recency;c.games.add(x.gameId);
+    c.serious+=['Mistake','Miss','Blunder'].includes(x.grade)?1:0;
+
+    const theme=x.theme||mistakeTheme(x.category);
+    const t=byTheme[theme]||(byTheme[theme]={n:0,w:0,rawFocus:0,focus:0,serious:0,games:new Set()});
+    t.n++;t.w+=x.weight;t.rawFocus+=x.weight*recency;t.games.add(x.gameId);
+    t.serious+=['Mistake','Miss','Blunder'].includes(x.grade)?1:0;
   });
+
+  // Confidence multiplier rewards repeated evidence across moves and games.
+  // A single giant error can still matter, but it cannot automatically outrank
+  // a pattern that keeps appearing in several games.
+  Object.values(byTheme).forEach(t=>{
+    const occurrences=Math.min(6,t.n),gameCount=Math.min(4,t.games.size);
+    const confidence=.55+.07*occurrences+.13*gameCount;
+    t.confidence=Math.min(1.35,confidence);
+    t.focus=t.rawFocus*t.confidence;
+  });
+
   const ranked=Object.entries(byCat).sort((a,b)=>b[1].focus-a[1].focus);
+  const themes=Object.entries(byTheme).sort((a,b)=>b[1].focus-a[1].focus);
   const totalW=ranked.reduce((s,x)=>s+x[1].w,0)||1;
-  const totalFocus=ranked.reduce((s,x)=>s+x[1].focus,0)||1;
+  const totalThemeFocus=themes.reduce((s,x)=>s+x[1].focus,0)||1;
 
   const phase={};
   all.forEach(x=>{const o=phase[x.phase]||(phase[x.phase]={n:0,w:0});o.n++;o.w+=x.weight;});
   const serious=all.filter(x=>['Mistake','Miss','Blunder'].includes(x.grade)).length;
 
+  const themeHtml=themes.slice(0,4).map(([k,v])=>
+    '<div class="trendrow"><span><b>'+k+'</b><small>'+v.n+' occurrence'+(v.n===1?'':'s')+' across '+v.games.size+' game'+(v.games.size===1?'':'s')+' · '+Math.round(v.focus/totalThemeFocus*100)+'% focus</small></span><b>'+v.focus.toFixed(1)+'</b></div>'
+  ).join('');
+
   const top=ranked.slice(0,5).map(([k,v])=>
     '<button class="trendrow trendbutton" onclick="trendView('+JSON.stringify(k).replace(/"/g,'&quot;')+')">'+
-    '<span>'+k+' <small>'+Math.round(v.w/totalW*100)+'% impact · '+v.n+' occurrence'+(v.n===1?'':'s')+'</small></span>'+
+    '<span>'+k+' <small>'+Math.round(v.w/totalW*100)+'% impact · '+v.n+' occurrence'+(v.n===1?'':'s')+' · '+v.games.size+' game'+(v.games.size===1?'':'s')+'</small></span>'+
     '<b>'+v.focus.toFixed(1)+'</b></button>').join('');
 
+  const totalPhaseWeight=all.reduce((s,z)=>s+z.weight,0)||1;
   const phaseHtml=['Opening','Early middlegame','Middlegame','Endgame'].map(k=>{
     const x=phase[k]||{n:0,w:0};
-    return '<div class="phasepill"><b>'+x.n+'</b><span>'+k+'</span><small>'+Math.round((x.w/(all.reduce((s,z)=>s+z.weight,0)||1))*100)+'% impact</small></div>';
+    return '<div class="phasepill"><b>'+x.n+'</b><span>'+k+'</span><small>'+Math.round(x.w/totalPhaseWeight*100)+'% impact</small></div>';
   }).join('');
 
   const filtered=(TREND_FILTER?all.filter(x=>x.category===TREND_FILTER):all)
@@ -294,29 +374,20 @@ function renderMistakeTrends(){
       (x.fen&&g?'<button class="mini" onclick="trendViewPosition('+JSON.stringify(g.id).replace(/"/g,'&quot;')+','+x.ply+')">Replay</button>':'')+'</div>';
   }).join(''):'<div class="trendempty">No matching mistakes.</div>';
 
-  const focus=ranked[0];
-  const focusAdvice={
-    'Rook placement / coordination':'Before moving a rook, check what it protects, what attacks it will face, and whether the other rook belongs on that file instead.',
-    'Pawn break / central decision':'Before changing the center, calculate the opponent’s forcing reply and decide whether the pawn break improves your pieces or theirs.',
-    'Premature attack / pawn weakening':'Before pushing an attacking pawn, check the squares and king cover you permanently give up.',
-    'Calculation / exchanges':'Before committing to a capture or exchange, calculate the full forcing sequence through the final recapture.',
-    'Hanging / undefended piece':'Before every move, scan your loose pieces and the opponent’s forcing captures.',
-    'Piece activity / coordination':'Ask which piece is worst placed and whether your move improves the whole position rather than one piece.',
-    'King placement / safety':'Before moving the king, check forcing checks, open files, and whether the destination reduces your escape squares.',
-    'Positional decision / plan':'When there is no forcing tactic, identify your worst piece, the opponent’s threat, and the pawn break you are playing toward.',
-    'Tactical oversight':'Before committing, scan checks, captures, and threats for both sides.'
-  };
+  const focus=themes[0];
   const focusText=focus
-    ? 'Current focus: <b>'+focus[0]+'</b>. It represents about '+Math.round(focus[1].focus/totalFocus*100)+'% of your severity- and recency-weighted mistake impact. '+(focusAdvice[focus[0]]||'Pause before committing and compare your candidate move with the opponent’s strongest forcing reply.')
+    ? 'Current focus: <b>'+focus[0]+'</b>. This theme has appeared '+focus[1].n+' time'+(focus[1].n===1?'':'s')+' across '+focus[1].games.size+' of '+games.length+' reviewed game'+(games.length===1?'':'s')+'. '+themeAdvice(focus[0])
     : '';
 
   host.innerHTML=
     '<div class="trendstats"><span><b>'+games.length+'</b> games</span><span><b>'+all.length+'</b> meaningful errors</span><span><b>'+serious+'</b> serious</span></div>'+
     '<div class="trendsub">Game phase</div><div class="phasegrid">'+phaseHtml+'</div>'+
-    '<div class="trendsub">Recurring habits · weighted by impact</div>'+top+
+    '<div class="trendsub">Training themes · confidence adjusted</div>'+themeHtml+
+    '<div class="trendsub">Specific habits · weighted by impact</div>'+top+
     '<div class="trendsub">'+(TREND_FILTER?'Mistakes · '+TREND_FILTER+' <button class="tinyclear" onclick="trendView(\'\')">show all</button>':'Recent meaningful mistakes')+'</div>'+
     recentHtml+'<div class="trendhint">'+focusText+'</div>';
 }
+
 function clearMistakeHistory(){if(!confirm('Clear all saved ChessTool mistake history?'))return;MISTAKE_GAMES=[];TREND_FILTER='';try{localStorage.removeItem(MISTAKE_LOG_KEY);}catch(e){}renderMistakeTrends();}
 
 // ─── GAME STATE ──────────────────────────────────────────────────────────────
@@ -1954,7 +2025,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.23 loaded: contextual Brilliant + sharper Mistake Coach');
+console.info('ChessTool V2.24 loaded: hierarchical coaching themes + confidence focus + garbage-time filtering');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
