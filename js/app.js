@@ -74,7 +74,7 @@ function isRepertoireMove(fen,san){return repertoireMoveStatus(fen,san).inBook;}
 const MISTAKE_LOG_KEY='chesstool_mistake_log_v1';
 const MISTAKE_LOG_MAX_GAMES=60;
 let TREND_FILTER='';
-let MISTAKE_REPLAY=null; // {gameId,ply,fen,bestUci,bestSan,playedSan,move,attempts}
+let MISTAKE_REPLAY=null; // V2.25: fresh-verified replay state; cached review best is advisory only
 function loadMistakeLog(){
   try{const x=JSON.parse(localStorage.getItem(MISTAKE_LOG_KEY)||'[]');return Array.isArray(x)?x:[];}catch(e){return[];}
 }
@@ -273,19 +273,61 @@ function normalizedTrendErrors(){
 }
 
 function trendView(category){TREND_FILTER=TREND_FILTER===category?'':category;renderMistakeTrends();}
+function replayEvalForMover(ev,mover){
+  if(!ev)return null;
+  if(ev.kind==='mate'){
+    const good=(mover==='w'&&ev.value>0)||(mover==='b'&&ev.value<0);
+    return good?100:-100;
+  }
+  if(ev.kind==='cp')return mover==='w'?ev.value:-ev.value;
+  return null;
+}
+function replayEvalLoss(bestEval,candidateEval,mover){
+  const b=replayEvalForMover(bestEval,mover),c=replayEvalForMover(candidateEval,mover);
+  if(b==null||c==null)return null;
+  if(Math.abs(b)>=90||Math.abs(c)>=90)return Math.max(0,b-c);
+  return Math.max(0,b-c);
+}
+function replayReplyDescription(afterFen,replyUci){
+  if(!replyUci||!isLegalEngineMove(afterFen,replyUci))return'';
+  try{
+    const san=uci2san(afterFen,replyUci);
+    const purpose=movePurpose(afterFen,replyUci);
+    return san+(purpose?' — '+purpose:'');
+  }catch(e){return'';}
+}
 function trendViewPosition(gameId,ply){
   const g=MISTAKE_GAMES.find(x=>x.id===gameId),e=g?.errors?.find(x=>x.ply===ply);if(!e?.fen)return;
-  const bestUci=e.best?san2uci(e.fen,e.best):null;
-  MISTAKE_REPLAY={gameId,ply,fen:e.fen,bestUci,bestSan:e.best||'',playedSan:e.san||'',move:e.move||'',attempts:0};
-  BOT_ACTIVE=false;BOT_THINKING=false;PRACTICE_LOCK=false;
+  const cachedBest=e.best?san2uci(e.fen,e.best):null;
+  MISTAKE_REPLAY={
+    gameId,ply,fen:e.fen,cachedBestUci:cachedBest,cachedBestSan:e.best||'',
+    bestUci:null,bestSan:'',bestEval:null,playedSan:e.san||'',move:e.move||'',
+    attempts:0,validating:true,checking:false
+  };
+  BOT_ACTIVE=false;BOT_THINKING=false;PRACTICE_LOCK=true;
   FEN=e.fen;HIST=[e.fen];SANS=[];FLIPPED=g.color==='black';SEL=null;LDOTS=[];LF=null;LT=null;
   refreshPanel();drawBoard();drawMoveList();
-  const prompt='Replay '+e.move+' '+e.san+'. You are back at the position before the mistake. Find a stronger move.';
+  const prompt='Replay '+e.move+' '+e.san+'. Freshly verifying this position with Stockfish before you solve it…';
   setStat(prompt,'info');setCoach(prompt);
   document.getElementById('board')?.scrollIntoView({behavior:'smooth',block:'center'});
+
+  sfAnalyzePositionFresh(e.fen,15,res=>{
+    const r=MISTAKE_REPLAY;if(!r||r.gameId!==gameId||r.ply!==ply)return;
+    r.validating=false;PRACTICE_LOCK=false;
+    if(!res){
+      const msg='Fresh verification was unavailable. Replay is paused rather than trusting the cached review move.';
+      setStat(msg,'bad');setCoach(msg);r.checking=true;return;
+    }
+    const ev=infoWhiteEval(e.fen,res.info);evaluationPerspectiveSanity(e.fen,res.info,ev);
+    r.bestUci=res.best;r.bestSan=uci2san(e.fen,res.best)||'';r.bestEval=ev;
+    const changed=r.cachedBestUci&&r.cachedBestUci!==r.bestUci;
+    const msg='Position freshly verified. Find the strongest move.'+
+      (changed?' The fresh search changed the old cached recommendation, so Replay will use the new analysis.':'');
+    setStat(msg,'info');setCoach(msg);
+  });
 }
 function mistakeReplayClick(rank,file){
-  if(!MISTAKE_REPLAY)return;
+  const r=MISTAKE_REPLAY;if(!r||r.validating||r.checking)return;
   const {bd,turn}=parseFen(FEN),p=GP(bd,rank,file);
   if(SEL){
     const hit=LDOTS.find(d=>d.r===rank&&d.f===file);
@@ -295,19 +337,72 @@ function mistakeReplayClick(rank,file){
   }
   if(p&&friendly(p,turn)){SEL={r:rank,f:file};LDOTS=getLegalDots(rank,file);drawBoard();}
 }
-function handleMistakeReplayMove(uci){
-  const r=MISTAKE_REPLAY;if(!r)return;
-  const san=uci2san(FEN,uci);r.attempts++;
-  const correct=r.bestUci&&uci===r.bestUci;
-  setLastUci(uci);FEN=applyUci(FEN,uci);SEL=null;LDOTS=[];drawBoard();
-  if(correct){
-    const msg='✓ Correct — '+san+' was the engine best move here. You fixed '+r.move+' '+r.playedSan+(r.attempts>1?' after '+r.attempts+' tries.':'.');
-    setStat(msg,'ok');setCoach(msg);MISTAKE_REPLAY=null;return;
-  }
-  const msg='Not quite — '+san+' is legal, but there is a stronger move in this position. Try again.';
-  setStat(msg,'bad');setCoach(msg);
-  setTimeout(()=>{if(!MISTAKE_REPLAY)return;FEN=r.fen;SEL=null;LDOTS=[];LF=null;LT=null;refreshPanel();drawBoard();},900);
+function resetReplayPosition(r,delay=0){
+  setTimeout(()=>{
+    if(!MISTAKE_REPLAY||MISTAKE_REPLAY!==r)return;
+    FEN=r.fen;HIST=[r.fen];SANS=[];SEL=null;LDOTS=[];LF=null;LT=null;
+    r.checking=false;PRACTICE_LOCK=false;
+    refreshPanel();drawBoard();drawMoveList();
+  },delay);
 }
+function handleMistakeReplayMove(uci){
+  const r=MISTAKE_REPLAY;if(!r||r.validating||r.checking)return;
+  const originalFen=r.fen,mover=parseFen(originalFen).turn,san=uci2san(originalFen,uci);
+  if(!san)return;
+  r.attempts++;r.checking=true;PRACTICE_LOCK=true;
+  setLastUci(uci);
+  const afterFen=applyUci(originalFen,uci);
+  FEN=afterFen;HIST=[originalFen,afterFen];SANS=[san];SEL=null;LDOTS=[];drawBoard();drawMoveList();
+  setStat('Verifying '+san+' from the original position…','info');
+  setCoach('Fresh Stockfish verification is checking your correction and the opponent’s strongest reply.');
+
+  // Same-parent search: score the move from the ORIGINAL position so the
+  // candidate is comparable with the freshly verified best move.
+  sfAnalyzePlayedMoveFresh(originalFen,uci,15,candidateRes=>{
+    if(!MISTAKE_REPLAY||MISTAKE_REPLAY!==r)return;
+    if(!candidateRes){
+      const msg='Could not verify '+san+'. Replay will not mark it correct without a fresh engine result.';
+      setStat(msg,'bad');setCoach(msg);resetReplayPosition(r,900);return;
+    }
+    const candidateEval=infoWhiteEval(originalFen,candidateRes.info);
+    evaluationPerspectiveSanity(originalFen,candidateRes.info,candidateEval);
+    const loss=replayEvalLoss(r.bestEval,candidateEval,mover);
+    const exactBest=uci===r.bestUci;
+    const nearBest=loss!=null&&loss<=0.35; // <= ~0.35 pawns from the fresh best.
+    const accepted=exactBest||nearBest;
+
+    // Analyze the resulting position too. This is the tactical sanity check:
+    // Replay explicitly surfaces the opponent's strongest response.
+    sfAnalyzePositionFresh(afterFen,14,replyRes=>{
+      if(!MISTAKE_REPLAY||MISTAKE_REPLAY!==r)return;
+      let reply='',afterEval=null;
+      if(replyRes){
+        reply=replayReplyDescription(afterFen,replyRes.best);
+        afterEval=infoWhiteEval(afterFen,replyRes.info);
+        evaluationPerspectiveSanity(afterFen,replyRes.info,afterEval);
+      }
+      const evalPart=afterEval?' Resulting eval: '+evalText(afterEval)+'.':'';
+      const replyPart=reply?' Opponent’s strongest reply: '+reply+'.':'';
+      const tries=r.attempts>1?' after '+r.attempts+' tries':'';
+
+      if(accepted){
+        const quality=exactBest?'fresh engine best move':'an engine-equivalent correction';
+        const msg='✓ Verified — '+san+' is '+quality+tries+'.'+evalPart+replyPart;
+        setStat(msg,'ok');setCoach(msg);
+        // Keep the corrected position on the board so the user can SEE the
+        // tactical consequence. Do not silently reset or auto-play the reply.
+        r.checking=true;PRACTICE_LOCK=true;
+        return;
+      }
+
+      const bestText=r.bestSan?' Fresh best: '+r.bestSan+'.':'';
+      const lossText=loss!=null&&loss<90?' Your move is about '+loss.toFixed(2)+' pawns worse than the fresh best.':'';
+      const msg='Not quite — '+san+' did not pass fresh verification.'+bestText+lossText+evalPart+replyPart+' Try the position again.';
+      setStat(msg,'bad');setCoach(msg);resetReplayPosition(r,1700);
+    });
+  });
+}
+
 function renderMistakeTrends(){
   const host=document.getElementById('mistaketrends');if(!host)return;
   const games=MISTAKE_GAMES,all=normalizedTrendErrors();
@@ -1288,6 +1383,61 @@ function sfAnalyzePlayedMove(fen,uci,depth,cb,retry=0){
   }catch(e){finish(null);}
 }
 
+// V2.25 Replay verification deliberately bypasses review caches.
+function sfAnalyzePositionFresh(fen,depth,cb,retry=0){
+  if(!SF||SF_FAILED){cb(null);return;}
+  let finished=false;
+  const finish=res=>{
+    if(finished)return;finished=true;
+    clearTimeout(SF_TIMER);SF_READY_CB=null;SF_CB=null;
+    if(!res&&retry<1){setTimeout(()=>sfAnalyzePositionFresh(fen,Math.max(12,depth-1),cb,retry+1),140);return;}
+    cb(res);
+  };
+  try{
+    SF_CB=null;SF_LAST_INFO=null;SF_MULTI_INFO={};SF.postMessage('stop');
+    SF_READY_CB=()=>{
+      if(finished)return;
+      SF_LAST_INFO=null;SF_MULTI_INFO={};
+      SF_CB=(move,info)=>{
+        if(!engineResultValid(fen,move,info)){finish(null);return;}
+        finish({best:move,info});
+      };
+      SF.postMessage('setoption name UCI_LimitStrength value false');
+      SF.postMessage('setoption name Skill Level value 20');
+      SF.postMessage('setoption name MultiPV value 1');
+      SF.postMessage('position fen '+fen);
+      SF.postMessage('go depth '+depth);
+    };
+    SF.postMessage('isready');
+    SF_TIMER=setTimeout(()=>{try{SF.postMessage('stop');}catch(e){}finish(null);},depth>=15?19000:15000);
+  }catch(e){finish(null);}
+}
+function sfAnalyzePlayedMoveFresh(fen,uci,depth,cb,retry=0){
+  if(!SF||SF_FAILED||!isLegalEngineMove(fen,uci)){cb(null);return;}
+  let finished=false;
+  const finish=res=>{
+    if(finished)return;finished=true;
+    clearTimeout(SF_TIMER);SF_READY_CB=null;SF_CB=null;
+    if(!res&&retry<1){setTimeout(()=>sfAnalyzePlayedMoveFresh(fen,uci,Math.max(12,depth-1),cb,retry+1),140);return;}
+    cb(res);
+  };
+  try{
+    SF_CB=null;SF_LAST_INFO=null;SF_MULTI_INFO={};SF.postMessage('stop');
+    SF_READY_CB=()=>{
+      if(finished)return;
+      SF_LAST_INFO=null;SF_MULTI_INFO={};
+      SF_CB=(move,info)=>finish(info?{best:uci,info}:null);
+      SF.postMessage('setoption name UCI_LimitStrength value false');
+      SF.postMessage('setoption name Skill Level value 20');
+      SF.postMessage('setoption name MultiPV value 1');
+      SF.postMessage('position fen '+fen);
+      SF.postMessage('go depth '+depth+' searchmoves '+uci);
+    };
+    SF.postMessage('isready');
+    SF_TIMER=setTimeout(()=>{try{SF.postMessage('stop');}catch(e){}finish(null);},depth>=15?19000:15000);
+  }catch(e){finish(null);}
+}
+
 function sfAnalyzePosition(fen,cb){sfAnalyzePositionDepth(fen,14,cb);}
 
 function infoWhiteEval(fen,info){
@@ -1960,6 +2110,14 @@ function drawMoveList(){
 
 // ─── CONTROLS ────────────────────────────────────────────────────────────────
 function goBack(){
+  if(MISTAKE_REPLAY){
+    const r=MISTAKE_REPLAY;
+    FEN=r.fen;HIST=[r.fen];SANS=[];SEL=null;LDOTS=[];LF=null;LT=null;
+    r.checking=false;PRACTICE_LOCK=false;
+    refreshPanel();drawBoard();drawMoveList();
+    setStat(r.bestUci?'Replay position reset — find the strongest move.':'Replay position reset — verification is still required.','info');
+    return;
+  }
   if(HIST.length<=1)return;
   HIST.pop();SANS.pop();FEN=HIST[HIST.length-1];
   SEL=null;LDOTS=[];LF=null;LT=null;
@@ -2025,7 +2183,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.24 loaded: hierarchical coaching themes + confidence focus + garbage-time filtering');
+console.info('ChessTool V2.25 loaded: fresh-verified replay corrections + opponent reply sanity checks');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
