@@ -1,29 +1,42 @@
-# ChessTool V2.24
+# ChessTool V2.25
 
-Focused Mistake Coach interpretation update.
+Focused Replay verification update.
 
-## Hierarchical coaching themes
-Specific categories are preserved, but related errors also roll up into broader trainable themes:
-- Coordination & threat awareness
-- Calculation & forcing moves
-- King safety & forcing threats
-- Pawn structure & timing
-- Planning & tempi
+## Replay no longer trusts the cached review best move
+When you tap Replay, ChessTool now:
+1. restores the exact position before your mistake;
+2. runs a fresh full-strength Stockfish search with cache bypassed;
+3. updates the replay target if the fresh best move differs from the old review result;
+4. waits for that verification before allowing a correction attempt.
 
-This prevents superficially different moves (for example a bishop move and a rook move) from being treated as unrelated when the common issue is piece coordination or failure to account for the opponent's threat.
+## Every attempted correction is freshly scored
+Your move is analyzed with `searchmoves` from the ORIGINAL position so its evaluation
+is directly comparable with the freshly verified best move.
 
-## Confidence-aware Current Focus
-Current Focus now uses impact, recency, number of occurrences, and number of distinct games. A single expensive mistake can matter, but a pattern repeated across several games receives much more confidence. The focus message reports the number of occurrences and games supporting the conclusion.
+Replay accepts:
+- the fresh engine best move; or
+- a near-equivalent move within roughly 0.35 pawns of the fresh best.
 
-## Garbage-time filtering
-Once the user is already decisively lost (about -6 or worse from the user's perspective, or already being mated), later engine-label noise is no longer saved into persistent habit history. The move that actually caused the collapse is still logged because the position was not yet decisively lost before that move.
+It no longer says `Correct` solely because your move matches an old stored SAN.
 
-This also prevents capped +/-10 evaluations from creating fake 5-10 pawn long-term mistake impacts late in lost games.
+## Opponent strongest-reply sanity check
+After your attempted correction, ChessTool freshly analyzes the resulting position and
+shows:
+- the resulting evaluation;
+- the opponent's strongest reply;
+- a short description of what that reply does when available.
 
-## Cleaner semantic categories
-- `Pawn break / central decision` is renamed to `Central pawn / structure decision`.
-- `Pawn / endgame technique` is only used in the Endgame phase; otherwise late pawn errors use `Pawn structure / technique`.
-- Old saved category names are normalized when possible without requiring the user to clear history.
+This is designed for cases like a suggested `O-O-O` where the user notices a possible
+`Nf7` rook fork. Even if castling is still objectively best, Replay will surface Nf7 as
+the opponent's strongest response instead of hiding the tactical consequence.
 
-## Retained
-Replay correction training, phase tracking, severity/recency weighting, Book handling, bot logic, Fast/Deep Game Review, contextual Brilliant grading, and persistent local history remain unchanged.
+If the attempted move is not good enough, Replay returns you to the original position
+after showing the fresh best move and opponent response.
+
+## Reliability
+Fresh Replay searches deliberately bypass the normal Game Review cache. If Stockfish
+cannot fresh-verify a position, Replay refuses to mark a move correct rather than
+falling back to stale cached analysis.
+
+All V2.24 Mistake Coach themes, confidence weighting, garbage-time filtering,
+Game Review, bot play, opening repertoire, and middlegame training remain unchanged.
