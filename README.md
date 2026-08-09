@@ -1,25 +1,29 @@
-# ChessTool V2.23
+# ChessTool V2.24
 
-Targeted Mistake Coach / replay update.
+Focused Mistake Coach interpretation update.
 
-## Replay now actually works
-The Replay button now enters a dedicated correction mode instead of only changing the board position. This fixes the old conflict where VS BOT click handling ignored board input after a completed game.
+## Hierarchical coaching themes
+Specific categories are preserved, but related errors also roll up into broader trainable themes:
+- Coordination & threat awareness
+- Calculation & forcing moves
+- King safety & forcing threats
+- Pawn structure & timing
+- Planning & tempi
 
-- Replay restores the exact position immediately before the saved mistake.
-- Pieces are movable normally and all legal moves can be attempted.
-- A wrong correction is shown on the board, gets immediate feedback, then resets to the key position so you can try again.
-- The saved engine-best move is the correction target.
-- A correct move is confirmed and the replay exercise ends.
-- Replay works even though the original bot game is already over.
-- Starting/resetting another mode safely exits replay mode.
+This prevents superficially different moves (for example a bishop move and a rook move) from being treated as unrelated when the common issue is piece coordination or failure to account for the opponent's threat.
 
-## Mistake Trends UI
-- Game-phase cards now keep the phase name and impact percentage on separate lines on mobile.
+## Confidence-aware Current Focus
+Current Focus now uses impact, recency, number of occurrences, and number of distinct games. A single expensive mistake can matter, but a pattern repeated across several games receives much more confidence. The focus message reports the number of occurrences and games supporting the conclusion.
 
-V2.21's meaningful-error thresholds, severity/recency weighting, persistent local history, repertoire data, bot behavior, review engine, and middlegame training remain intact.
+## Garbage-time filtering
+Once the user is already decisively lost (about -6 or worse from the user's perspective, or already being mated), later engine-label noise is no longer saved into persistent habit history. The move that actually caused the collapse is still logged because the position was not yet decisively lost before that move.
 
+This also prevents capped +/-10 evaluations from creating fake 5-10 pawn long-term mistake impacts late in lost games.
 
-## V2.23
-- Brilliant moves now require meaningful practical result context; best sacrifices in already-lost positions are no longer labeled Brilliant.
-- Replaced the generic Decision quality fallback with more concrete king, queen, exchange, tactical, and positional-plan diagnoses.
-- Current Focus now includes a habit-specific training cue so the trend tracker teaches the underlying decision process.
+## Cleaner semantic categories
+- `Pawn break / central decision` is renamed to `Central pawn / structure decision`.
+- `Pawn / endgame technique` is only used in the Endgame phase; otherwise late pawn errors use `Pawn structure / technique`.
+- Old saved category names are normalized when possible without requiring the user to clear history.
+
+## Retained
+Replay correction training, phase tracking, severity/recency weighting, Book handling, bot logic, Fast/Deep Game Review, contextual Brilliant grading, and persistent local history remain unchanged.
