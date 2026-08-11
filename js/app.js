@@ -74,7 +74,8 @@ function isRepertoireMove(fen,san){return repertoireMoveStatus(fen,san).inBook;}
 const MISTAKE_LOG_KEY='chesstool_mistake_log_v1';
 const MISTAKE_LOG_MAX_GAMES=60;
 let TREND_FILTER='';
-let MISTAKE_REPLAY=null; // V2.25: fresh-verified replay state; cached review best is advisory only
+let MISTAKE_REPLAY=null; // V2.26: fresh-verified replay state; cached review best is advisory only
+let MISTAKE_DRILL={items:[],index:0,solved:0,attempts:0};
 function loadMistakeLog(){
   try{const x=JSON.parse(localStorage.getItem(MISTAKE_LOG_KEY)||'[]');return Array.isArray(x)?x:[];}catch(e){return[];}
 }
@@ -235,6 +236,92 @@ function gameFingerprint(){return BOT_LOG.map(e=>e.uci).join('-');}
 function reviewedGameResult(){
   try{const fen=REVIEW_FENS[REVIEW_FENS.length-1]||FEN,turn=parseFen(fen).turn,lm=legalMoves(fen);if(lm.length)return'completed';if(!inCheck(fen,turn))return'draw';const userSide=BOT_GAME_COLOR==='white'?'w':'b';return turn===userSide?'loss':'win';}catch(e){return'completed';}
 }
+function whiteEvalToSide(ev,side){
+  if(!ev)return null;
+  if(ev.kind==='mate'){
+    const whiteWinning=ev.value>0;
+    const good=side==='w'?whiteWinning:!whiteWinning;
+    return good?100:-100;
+  }
+  if(ev.kind==='cp')return side==='w'?ev.value:-ev.value;
+  return null;
+}
+function reviewedGameSummary(){
+  const side=BOT_GAME_COLOR==='white'?'w':'b', vals=[];
+  REVIEW_RESULTS.forEach(r=>{
+    const ev=r?.qualityAfter||r?.evalAfter||null,v=whiteEvalToSide(ev,side);
+    if(v!=null)vals.push(v);
+  });
+  let reachedWinning=false,blownAdvantage=false,seenWin=false;
+  vals.forEach(v=>{if(v>=1.5){reachedWinning=true;seenWin=true;}else if(seenWin&&v<=.25)blownAdvantage=true;});
+  return {plyCount:BOT_LOG.length,maxEval:vals.length?Math.max(...vals):null,minEval:vals.length?Math.min(...vals):null,reachedWinning,blownAdvantage};
+}
+function gameProgressStats(g){
+  const errs=(g.errors||[]),serious=errs.filter(x=>['Mistake','Miss','Blunder'].includes(x.grade));
+  const major=errs.filter(x=>['Blunder','Miss'].includes(x.grade)||(x.impact||0)>=2);
+  const first=serious.slice().sort((a,b)=>(a.ply||0)-(b.ply||0))[0]||null;
+  const firstMajor=major.slice().sort((a,b)=>(a.ply||0)-(b.ply||0))[0]||null;
+  const firstMove=first?Math.floor((first.ply||0)/2)+1:null;
+  const firstMajorMove=firstMajor?Math.floor((firstMajor.ply||0)/2)+1:null;
+  const before=first?evalForMover(first.beforeEval||null,first.mover||(first.fen?parseFen(first.fen).turn:null)):null;
+  return {
+    meaningful:errs.length,serious:serious.length,
+    early:errs.filter(x=>(x.phase||mistakePhase(x.ply||0,false))==='Early middlegame').length,
+    coordination:errs.filter(x=>(x.theme||mistakeTheme(x.category))==='Coordination & threat awareness').length,
+    firstMove,firstBefore:before,
+    clean:major.length===0,
+    cleanStretch:firstMajorMove!=null?Math.max(0,firstMajorMove-1):(g.summary?.plyCount?Math.ceil(g.summary.plyCount/2):null),
+    reachedWinning:!!g.summary?.reachedWinning,blownAdvantage:!!g.summary?.blownAdvantage,
+    converted:!!g.summary?.reachedWinning&&g.result==='win',hasSummary:!!g.summary
+  };
+}
+function pctDelta(a,b){if(!Number.isFinite(a)||!Number.isFinite(b)||Math.abs(b)<1e-9)return null;return (a-b)/Math.abs(b)*100;}
+function fmtDelta(v,lowerBetter=true){
+  if(v==null||!Number.isFinite(v))return '—';
+  const improved=lowerBetter?v<0:v>0;
+  return '<span class="'+(improved?'trendgood':(Math.abs(v)<3?'trendflat':'trendbad'))+'">'+(v>0?'↑ ':'↓ ')+Math.abs(v).toFixed(0)+'%</span>';
+}
+function average(a){const x=a.filter(Number.isFinite);return x.length?x.reduce((s,v)=>s+v,0)/x.length:null;}
+function progressComparisonHtml(games){
+  const ordered=games.slice().sort((a,b)=>(b.ts||0)-(a.ts||0));
+  const recent=ordered.slice(0,10),previous=ordered.slice(10,20);
+  if(recent.length<3)return '';
+  const R=recent.map(gameProgressStats),P=previous.map(gameProgressStats);
+  const rSer=average(R.map(x=>x.serious)),pSer=average(P.map(x=>x.serious));
+  const rMean=average(R.map(x=>x.meaningful)),pMean=average(P.map(x=>x.meaningful));
+  const rEarly=average(R.map(x=>x.early)),pEarly=average(P.map(x=>x.early));
+  const rCoord=average(R.map(x=>x.coordination)),pCoord=average(P.map(x=>x.coordination));
+  const rFirst=average(R.map(x=>x.firstMove)),pFirst=average(P.map(x=>x.firstMove));
+  const rClean=R.filter(x=>x.clean).length/recent.length*100,pClean=P.length?P.filter(x=>x.clean).length/P.length*100:null;
+  const rStretch=average(R.map(x=>x.cleanStretch)),pStretch=average(P.map(x=>x.cleanStretch));
+  const rLongest=Math.max(0,...R.map(x=>x.cleanStretch).filter(Number.isFinite)),pLongest=P.length?Math.max(0,...P.map(x=>x.cleanStretch).filter(Number.isFinite)):null;
+  const rBefore=average(R.map(x=>x.firstBefore)),pBefore=average(P.map(x=>x.firstBefore));
+  const summarized=recent.filter(g=>g.summary),winReached=summarized.filter(g=>g.summary?.reachedWinning);
+  const conversion=winReached.length?winReached.filter(g=>g.result==='win').length/winReached.length*100:null;
+  const blown=winReached.length?winReached.filter(g=>g.summary?.blownAdvantage).length/winReached.length*100:null;
+  const ds=pSer!=null?pctDelta(rSer,pSer):null,dc=pCoord!=null?pctDelta(rCoord,pCoord):null,df=pFirst!=null?pctDelta(rFirst,pFirst):null;
+  let score=0,signals=0;[[ds,true],[dc,true],[df,false]].forEach(([v,lower])=>{if(v==null)return;signals++; if((lower&&v<-8)||(!lower&&v>8))score++; else if((lower&&v>8)||(!lower&&v<-8))score--;});
+  const label=!previous.length?'Building baseline':score>=2?'Improving':score<=-2?'Needs attention':'Mixed / steady';
+  const cls=label==='Improving'?'progressgood':(label==='Needs attention'?'progressbad':'');
+  const metric=(name,val,prev,delta,lower=true,suffix='')=>'<div class="progressmetric"><span>'+name+'</span><b>'+(val==null?'—':val.toFixed(1)+suffix)+'</b><small>'+(previous.length?(prev==null?'No prior baseline':('Prev '+prev.toFixed(1)+suffix+' · '+fmtDelta(delta,lower))):'Need 10 more games for comparison')+'</small></div>';
+  const extras='<div class="progressmetric"><span>Clean games</span><b>'+Math.round(rClean)+'%</b><small>'+(pClean==null?'No prior baseline':'Prev '+Math.round(pClean)+'% · '+fmtDelta(pctDelta(rClean,pClean),false,false))+'</small></div>'+ 
+    '<div class="progressmetric"><span>Winning positions converted</span><b>'+(conversion==null?'Building data':Math.round(conversion)+'%')+'</b><small>'+(conversion==null?'Available for reviews completed after this update':('Blown advantage rate '+Math.round(blown||0)+'%'))+'</small></div>';
+  return '<div class="progressbox"><div class="progresshead"><span>Recent form · last '+recent.length+(previous.length?' vs previous '+previous.length:'')+'</span><b class="'+cls+'">'+label+'</b></div><div class="progressgrid">'+
+    metric('Serious errors / game',rSer,pSer,ds,true)+metric('Meaningful errors / game',rMean,pMean,pMean!=null?pctDelta(rMean,pMean):null,true)+
+    metric('First serious error',rFirst,pFirst,df,false,' mv')+metric('Avg eval before first serious',rBefore,pBefore,pBefore!=null?pctDelta(rBefore,pBefore):null,false,'')+
+    metric('Early middlegame errors / game',rEarly,pEarly,pEarly!=null?pctDelta(rEarly,pEarly):null,true)+metric('Coordination errors / game',rCoord,pCoord,dc,true)+
+    metric('Longest clean stretch',rLongest,pLongest,pLongest!=null?pctDelta(rLongest,pLongest):null,false,' mv')+extras+
+    '</div></div>';
+}
+function recentWeaknessHtml(games,all){
+  const ordered=games.slice().sort((a,b)=>(b.ts||0)-(a.ts||0)),recentIds=new Set(ordered.slice(0,10).map(g=>g.id)),prevIds=new Set(ordered.slice(10,20).map(g=>g.id));
+  if(prevIds.size<3)return '';
+  const counts=ids=>{const m={};all.filter(x=>ids.has(x.gameId)).forEach(x=>m[x.category]=(m[x.category]||0)+1);return m;};
+  const r=counts(recentIds),p=counts(prevIds),rg=Math.max(1,recentIds.size),pg=Math.max(1,prevIds.size);
+  const emerging=Object.keys(r).map(k=>({k,rr:r[k]/rg,pr:(p[k]||0)/pg,n:r[k]})).filter(x=>x.n>=2&&x.rr>x.pr*1.45&&x.rr-x.pr>=.15).sort((a,b)=>(b.rr-b.pr)-(a.rr-a.pr))[0];
+  if(!emerging)return '<div class="trendnote"><b>Recent weakness:</b> No new habit is spiking versus your previous 10 games.</div>';
+  return '<div class="trendnote"><b>Emerging issue:</b> '+emerging.k+' is showing up more often recently ('+emerging.n+' times in the last '+recentIds.size+' games).</div>';
+}
 function saveMistakeTrends(){
   if(!BOT_LOG.length||!REVIEW_RESULTS.length)return;
   const fp=gameFingerprint(),errors=[];
@@ -245,7 +332,7 @@ function saveMistakeTrends(){
     const category=mistakeCategory(e,before,after,r.grade,r.explanation,r.beforeEval||null,r.qualityAfter||null,i,impact);
     errors.push({move:reviewMoveLabel(i),san:e.san,grade:r.grade,category,theme:mistakeTheme(category),phase:mistakePhase(i,inBook),impact:+impact.toFixed(2),weight:severityWeight(r.grade,impact),best:r.bestSan||'',explanation:(r.explanation||'').slice(0,420),fen:before,ply:i,ts:Date.now(),beforeEval:r.beforeEval||null,afterEval:r.qualityAfter||null,mover});
   });
-  const game={id:fp,ts:Date.now(),bot:BOT_LABEL,color:BOT_GAME_COLOR,result:reviewedGameResult(),errors};
+  const game={id:fp,ts:Date.now(),bot:BOT_LABEL,color:BOT_GAME_COLOR,result:reviewedGameResult(),summary:reviewedGameSummary(),errors};
   const existing=MISTAKE_GAMES.findIndex(g=>g.id===fp);if(existing>=0)MISTAKE_GAMES[existing]=game;else MISTAKE_GAMES.push(game);
   MISTAKE_GAMES=MISTAKE_GAMES.slice(-MISTAKE_LOG_MAX_GAMES);try{localStorage.setItem(MISTAKE_LOG_KEY,JSON.stringify(MISTAKE_GAMES));}catch(e){}renderMistakeTrends();
 }
@@ -307,7 +394,7 @@ function trendViewPosition(gameId,ply){
   BOT_ACTIVE=false;BOT_THINKING=false;PRACTICE_LOCK=true;
   FEN=e.fen;HIST=[e.fen];SANS=[];FLIPPED=g.color==='black';SEL=null;LDOTS=[];LF=null;LT=null;
   refreshPanel();drawBoard();drawMoveList();
-  const prompt='Replay '+e.move+' '+e.san+'. Freshly verifying this position with Stockfish before you solve it…';
+  const prompt=(MODE==='mistakes'?'Mistake Drill: ':'Replay ')+e.move+' '+e.san+'. Freshly verifying this position with Stockfish before you solve it…';
   setStat(prompt,'info');setCoach(prompt);
   document.getElementById('board')?.scrollIntoView({behavior:'smooth',block:'center'});
 
@@ -321,10 +408,56 @@ function trendViewPosition(gameId,ply){
     const ev=infoWhiteEval(e.fen,res.info);evaluationPerspectiveSanity(e.fen,res.info,ev);
     r.bestUci=res.best;r.bestSan=uci2san(e.fen,res.best)||'';r.bestEval=ev;
     const changed=r.cachedBestUci&&r.cachedBestUci!==r.bestUci;
-    const msg='Position freshly verified. Find the strongest move.'+
+    const msg=(r.drill?'Mistake Drill verified. Find the strongest move.':'Position freshly verified. Find the strongest move.')+
       (changed?' The fresh search changed the old cached recommendation, so Replay will use the new analysis.':'');
     setStat(msg,'info');setCoach(msg);
   });
+}
+function buildMistakeDrillItems(){
+  const games=MISTAKE_GAMES.slice().sort((a,b)=>(b.ts||0)-(a.ts||0)),items=[],seen=new Set();
+  games.forEach(g=>{
+    (g.errors||[]).forEach(e=>{
+      if(!e.fen||seen.has(e.fen))return;
+      const impact=Number.isFinite(e.impact)?e.impact:0;
+      if(!(['Blunder','Miss'].includes(e.grade)||impact>=1.5))return;
+      if(shouldLogMistake(e.grade,impact,false,e.beforeEval||null,e.afterEval||null,e.mover||(e.fen?parseFen(e.fen).turn:null))===false)return;
+      seen.add(e.fen);items.push({gameId:g.id,ply:e.ply,grade:e.grade,impact,move:e.move||'',san:e.san||'',category:e.category||'',ts:g.ts||0});
+    });
+  });
+  items.sort((a,b)=>(b.impact-a.impact)||((b.ts||0)-(a.ts||0)));
+  // Keep the drill varied while still prioritizing the most painful positions.
+  const top=items.slice(0,40);
+  for(let i=top.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[top[i],top[j]]=[top[j],top[i]];}
+  return top;
+}
+function updateMistakeDrillCard(){
+  const count=document.getElementById('mdcount'),score=document.getElementById('mdscore'),meta=document.getElementById('mdmeta'),next=document.getElementById('mdnext');
+  const total=MISTAKE_DRILL.items.length,pos=total?Math.min(MISTAKE_DRILL.index+1,total):0;
+  if(count)count.textContent=total?pos+' / '+total:'0 positions';
+  if(score)score.textContent=MISTAKE_DRILL.solved+' solved · '+MISTAKE_DRILL.attempts+' attempts';
+  const item=MISTAKE_DRILL.items[MISTAKE_DRILL.index];
+  if(meta)meta.textContent=item?((item.grade||'Mistake')+' · '+(item.category||'Saved mistake')+' · '+(item.impact>=12?'decisive':item.impact.toFixed(1)+' pawn impact')):'Complete and review bot games to build your mistake drill.';
+  if(next)next.classList.add('hidden');
+}
+function startMistakeDrillPosition(index=0){
+  if(!MISTAKE_DRILL.items.length){MISTAKE_DRILL.items=buildMistakeDrillItems();MISTAKE_DRILL.index=0;}
+  if(!MISTAKE_DRILL.items.length){
+    MISTAKE_REPLAY=null;fullReset();setStat('No serious saved mistakes yet. Complete Game Reviews first.','info');setCoach('Mistake Drill will automatically use your saved blunders, misses, and high-impact mistakes.');updateMistakeDrillCard();return;
+  }
+  MISTAKE_DRILL.index=((index%MISTAKE_DRILL.items.length)+MISTAKE_DRILL.items.length)%MISTAKE_DRILL.items.length;
+  const item=MISTAKE_DRILL.items[MISTAKE_DRILL.index];
+  trendViewPosition(item.gameId,item.ply);
+  if(MISTAKE_REPLAY){MISTAKE_REPLAY.drill=true;MISTAKE_REPLAY.drillItem=item;}
+  setStat('Mistake Drill '+(MISTAKE_DRILL.index+1)+'/'+MISTAKE_DRILL.items.length+' — find the best move.','info');
+  setCoach('This is a position from one of your own serious mistakes. Solve it from scratch; Stockfish freshly verifies the answer.');
+  updateMistakeDrillCard();
+}
+function nextMistakeDrill(){
+  if(!MISTAKE_DRILL.items.length)return startMistakeDrillPosition(0);
+  startMistakeDrillPosition(MISTAKE_DRILL.index+1);
+}
+function reshuffleMistakeDrill(){
+  MISTAKE_DRILL.items=buildMistakeDrillItems();MISTAKE_DRILL.index=0;MISTAKE_DRILL.solved=0;MISTAKE_DRILL.attempts=0;startMistakeDrillPosition(0);
 }
 function mistakeReplayClick(rank,file){
   const r=MISTAKE_REPLAY;if(!r||r.validating||r.checking)return;
@@ -349,7 +482,7 @@ function handleMistakeReplayMove(uci){
   const r=MISTAKE_REPLAY;if(!r||r.validating||r.checking)return;
   const originalFen=r.fen,mover=parseFen(originalFen).turn,san=uci2san(originalFen,uci);
   if(!san)return;
-  r.attempts++;r.checking=true;PRACTICE_LOCK=true;
+  r.attempts++;if(r.drill){MISTAKE_DRILL.attempts++;updateMistakeDrillCard();}r.checking=true;PRACTICE_LOCK=true;
   setLastUci(uci);
   const afterFen=applyUci(originalFen,uci);
   FEN=afterFen;HIST=[originalFen,afterFen];SANS=[san];SEL=null;LDOTS=[];drawBoard();drawMoveList();
@@ -389,6 +522,11 @@ function handleMistakeReplayMove(uci){
         const quality=exactBest?'fresh engine best move':'an engine-equivalent correction';
         const msg='✓ Verified — '+san+' is '+quality+tries+'.'+evalPart+replyPart;
         setStat(msg,'ok');setCoach(msg);
+        if(r.drill){
+          MISTAKE_DRILL.solved++;updateMistakeDrillCard();
+          const next=document.getElementById('mdnext');if(next)next.classList.remove('hidden');
+          setCoach(msg+' Nice correction. Tap Next Position when you are ready.');
+        }
         // Keep the corrected position on the board so the user can SEE the
         // tactical consequence. Do not silently reset or auto-play the reply.
         r.checking=true;PRACTICE_LOCK=true;
@@ -474,8 +612,11 @@ function renderMistakeTrends(){
     ? 'Current focus: <b>'+focus[0]+'</b>. This theme has appeared '+focus[1].n+' time'+(focus[1].n===1?'':'s')+' across '+focus[1].games.size+' of '+games.length+' reviewed game'+(games.length===1?'':'s')+'. '+themeAdvice(focus[0])
     : '';
 
+  const progressHtml=progressComparisonHtml(games);
+  const recentWeakness=recentWeaknessHtml(games,all);
   host.innerHTML=
-    '<div class="trendstats"><span><b>'+games.length+'</b> games</span><span><b>'+all.length+'</b> meaningful errors</span><span><b>'+serious+'</b> serious</span></div>'+
+    progressHtml+
+    '<div class="trendstats"><span><b>'+games.length+'</b> games</span><span><b>'+all.length+'</b> meaningful errors</span><span><b>'+serious+'</b> serious</span></div>'+recentWeakness+
     '<div class="trendsub">Game phase</div><div class="phasegrid">'+phaseHtml+'</div>'+
     '<div class="trendsub">Training themes · confidence adjusted</div>'+themeHtml+
     '<div class="trendsub">Specific habits · weighted by impact</div>'+top+
@@ -976,6 +1117,12 @@ function practiceAutoReply(){
 
 function doHint(){
   if(MODE==='bot'){setStat('No hints in bot mode.','bad');return;}
+  if(MODE==='mistakes'){
+    const r=MISTAKE_REPLAY;if(!r){setStat('No saved mistake position loaded.','info');return;}
+    if(r.validating){setStat('Wait for fresh Stockfish verification first.','info');return;}
+    if(r.bestSan){setStat('💡 Best move: '+r.bestSan,'info');setCoach('Hint: '+r.bestSan+'. Try to explain what threat or coordination problem it solves before moving.');}
+    return;
+  }
   if(!SESSION_STARTED){setStat('Start a training session first.','info');return;}
   if(STUDY_PHASE==='middlegame'&&STUDY_PLAN){
     renderMiddlegamePanel(true);
@@ -2138,6 +2285,7 @@ function fullReset(){
 }
 
 function doReset(){
+  if(MODE==='mistakes'){startMistakeDrillPosition(MISTAKE_DRILL.index);return;}
   const wasSession=SESSION_STARTED;
   fullReset();SESSION_STARTED=wasSession;
   FLIPPED=SESSION_COLOR==='black';drawBoard();
@@ -2152,16 +2300,17 @@ function doFlip(){FLIPPED=!FLIPPED;drawBoard();}
 function setMode(mode){
   MISTAKE_REPLAY=null;
   MODE=mode;BOT_ACTIVE=false;SEL=null;LDOTS=[];SESSION_STARTED=false;PRACTICE_LOCK=false;STUDY_PHASE='opening';STUDY_PLAN=null;MID_FEEDBACK='';MID_PRE_ANALYSIS=null;
-  document.querySelectorAll('.nb').forEach((b,i)=>b.classList.toggle('on',['drill','bot'][i]===mode));
+  document.querySelectorAll('.nb').forEach((b,i)=>b.classList.toggle('on',['drill','mistakes','bot'][i]===mode));
   show('linecard',mode==='drill');
-  show('expcard',mode==='drill');
+  show('expcard',mode==='drill'||mode==='mistakes');
   show('midbotcard',mode==='drill');
   show('botcard',mode==='bot');
   show('trendcard',mode==='bot');
+  show('mistakedrillcard',mode==='mistakes');
   show('randbtn',mode==='drill');
   show('newgamebtn',mode==='bot');
   show('revbtn',false);
-  show('hintbtn',mode==='drill');
+  show('hintbtn',mode==='drill'||mode==='mistakes');
   document.getElementById('revcard').classList.add('hidden');
   document.getElementById('reviewdock')?.classList.add('hidden');
   document.getElementById('gameoveroverlay')?.classList.add('hidden');
@@ -2171,6 +2320,10 @@ function setMode(mode){
     buildLineSelector();renderStudy();initSF();
     const m='TRAIN: recall your opening, then continue directly into coached middlegame play. Wrong opening moves reset; middlegame errors are graded and retried.';
     setStat(m,'info');setCoach(m);
+  }
+  if(mode==='mistakes'){
+    initSF();MISTAKE_DRILL.items=buildMistakeDrillItems();MISTAKE_DRILL.index=0;MISTAKE_DRILL.solved=0;MISTAKE_DRILL.attempts=0;
+    startMistakeDrillPosition(0);
   }
   if(mode==='bot'){
     const m='Play a complete game, then review it move by move.';
@@ -2183,7 +2336,7 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.25 loaded: fresh-verified replay corrections + opponent reply sanity checks');
+console.info('ChessTool V2.26 loaded: progress trends + adaptive saved-mistake drill');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
