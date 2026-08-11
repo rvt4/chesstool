@@ -3,15 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChessTool V2.19</title>
+<title>ChessTool V2.26</title>
 <link rel="stylesheet" href="styles.css">
 
 </head>
 <body>
 <header>
-  <div class="logo">♟ ChessTool <small>English · Caro-Kann · V2.19</small></div>
+  <div class="logo">♟ ChessTool <small>English · Caro-Kann · V2.26</small></div>
   <nav>
     <button class="nb on" onclick="setMode('drill')">Train</button>
+    <button class="nb" onclick="setMode('mistakes')">Mistake Drill</button>
     <button class="nb" onclick="setMode('bot')">vs Bot</button>
   </nav>
 </header>
@@ -143,6 +144,17 @@
       <div class="ch"><span>Mistake Trends</span><button class="mini" onclick="clearMistakeHistory()">Clear</button></div>
       <div class="cb2" id="mistaketrends">
         <div class="trendempty">Complete a Game Review and your recurring mistakes will appear here.</div>
+      </div>
+    </div>
+    <div class="card hidden" id="mistakedrillcard">
+      <div class="ch"><span>Mistake Drill</span><span id="mdcount">0 positions</span></div>
+      <div class="cb2">
+        <div class="mistakedrillintro">Positions are pulled from your own blunders, misses, and high-impact mistakes. The cached answer is never trusted blindly—Stockfish freshly verifies each position before you solve it.</div>
+        <div class="mistakedrillstats"><b id="mdscore">0 solved · 0 attempts</b><span id="mdmeta">Complete and review bot games to build your mistake drill.</span></div>
+        <div class="mistakedrillactions">
+          <button class="cb hidden" id="mdnext" onclick="nextMistakeDrill()">Next Position →</button>
+          <button class="cb" onclick="reshuffleMistakeDrill()">↻ Reshuffle</button>
+        </div>
       </div>
     </div>
     <!-- review -->
