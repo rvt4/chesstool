@@ -903,7 +903,7 @@ function selectLineFamily(which){
     if(which==='all'||l.color===which)SEL_LINES.add(l.id);
   });
   buildLineSelector();
-  const label=which==='white'?'English only':which==='black'?'Caro-Kann only':'all English + Caro-Kann';
+  const label=which==='white'?'1.e4 / Italian only':which==='black'?'Caro-Kann only':'all 1.e4 + Caro-Kann';
   setStat('Selected '+label+'. Press Start Session.','info');
   setCoach('Selected '+label+'.');
 }
@@ -927,7 +927,7 @@ function startRandom(){
   SESSION_COLOR=seed.color;DRILL_COLOR=seed.color;SESSION_STARTED=true;PRACTICE_LOCK=false;STUDY_PHASE='opening';STUDY_PLAN=null;
   FLIPPED=SESSION_COLOR==='black';
   fullReset();SESSION_STARTED=true; // fullReset clears board state only; restore session flag
-  const family=SESSION_COLOR==='white'?'English as White':'Caro-Kann as Black';
+  const family=SESSION_COLOR==='white'?'1.e4 / Italian as White':'Caro-Kann as Black';
   const startMsg='TRAIN: '+family+' — opening opponent variations are randomized from your selected lines, then the session continues into middlegame training.';
   setStat(startMsg,'info');setCoach(startMsg);
   renderStudy();
@@ -936,9 +936,10 @@ function startRandom(){
 
 
 const PLAN_LINE_MAP={
-  'e-e5-4n':'eng-rev-sic','e-e5-cl':'eng-bot','e-sym':'eng-sym','e-hedge':'eng-hedge',
-  'e-grun':'eng-grun','e-kid':'eng-kid','e-e6':'eng-e6','e-c6':'eng-c6',
-  'e-dutch':'eng-dutch','e-b6':'eng-b6','e-e6-ex':'eng-e6','e-sym-e6':'eng-sym',
+  'it-main':'e4-italian','it-2n':'e4-italian','it-hung':'e4-italian',
+  'e4-phil':'e4-open','e4-sic-nf6':'e4-alapin','e4-sic-d5':'e4-alapin',
+  'e4-fr':'e4-french','e4-ck':'e4-caro-white','e4-scandi':'e4-open',
+  'e4-pirc':'e4-pirc','e4-modern':'e4-pirc','e4-alekh':'e4-open',
   'ck-cls':'ck-class','ck-cls2':'ck-class',
   'ck-adv':'ck-adv','ck-tal':'ck-adv','ck-adv-nc3':'ck-adv','ck-panov':'ck-panov','ck-ex':'ck-exchange','ck-ex-nf3':'ck-exchange',
   'ck-2k':'ck-two','ck-fan':'ck-fantasy','ck-hill':'ck-hill','ck-d3':'ck-d3'
