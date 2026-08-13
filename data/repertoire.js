@@ -1,98 +1,102 @@
-// ════ ENGLISH OPENING LINES ══════════════════════════════════════════════════
+// ════ 1.e4 WHITE REPERTOIRE ═══════════════════════════════════════════════════
+// Primary system: Italian Game. The supporting repertoire keeps the same
+// philosophy against Black's other first moves: occupy the center, develop,
+// castle, then play forcing/active chess rather than drifting.
 
-// Line 1: King's English Four Knights — main line vs 1...e5
-// V2.2 replaces the old pseudo-Botvinnik line. The old continuation mixed
-// structures and could jump branches after transpositions. This is a coherent
-// Four Knights repertoire with the critical ...e4 / Ng5 structure.
 registerLine(
-  ['c4','e5','Nc3','Nf6','Nf3','Nc6','g3','Bb4','Bg2','O-O','O-O','e4','Ng5','Bxc3','bxc3','Re8','f3','exf3','Nxf3','d6','d3','h6','e4'],
-  [A('English Opening','A10','<strong>1.c4</strong> — Control d5 from the flank and keep the center flexible.'),
-   A('King\'s English','A20','<strong>1…e5</strong> — The Reversed Sicilian. Develop quickly and use the extra tempo rather than forcing an early pawn break.'),
-   A('King\'s English','A25','<strong>2.Nc3</strong> — Develop toward d5 and keep g3/Bg2 available.'),
-   A('English: Four Knights','A28','<strong>2…Nf6</strong> — Black develops naturally. We answer with Nf3 and head for the Four Knights.'),
-   A('English: Four Knights','A28','<strong>3.Nf3</strong> — Develop before committing the center. This also discourages an easy ...e4.'),
-   A('English: Four Knights','A28','<strong>3…Nc6</strong> — The Four Knights position. Now g3 prepares the long diagonal.'),
-   A('English: Four Knights','A28','<strong>4.g3</strong> — Fianchetto. The bishop on g2 will pressure the center and queenside.'),
-   A('English: Four Knights','A28','<strong>4…Bb4</strong> — The main pin. Don’t chase the bishop; finish development with Bg2 and O-O.'),
-   A('English: Four Knights','A28','<strong>5.Bg2</strong> — Complete the fianchetto and prepare to castle.'),
-   A('English: Four Knights','A28','<strong>5…O-O</strong> — Black gets the king safe before changing the center.'),
-   A('English: Four Knights','A28','<strong>6.O-O</strong> — Castle first. Black’s thematic ...e4 now gains space but gives us targets.'),
-   A('English: Four Knights','A28','<strong>6…e4</strong> — The critical advance. The knight goes to g5, hitting e4 and creating tactical pressure.'),
-   A('English: Four Knights — Ng5','A28','<strong>7.Ng5!</strong> — The thematic response. Pressure e4 and force Black to clarify the pin.'),
-   A('English: Four Knights','A28','<strong>7…Bxc3</strong> — Black gives up the bishop pair to damage the queenside pawns.'),
-   A('English: Four Knights','A28','<strong>8.bxc3</strong> — Accept the doubled pawns. In return we get the bishop pair, the b-file, and central control.'),
-   A('English: Four Knights','A28','<strong>8…Re8</strong> — Black reinforces e4. We undermine it with f3.'),
-   A('English: Four Knights — f3 break','A28','<strong>9.f3!</strong> — The key break. Challenge Black’s advanced e4 pawn before it cramps us.'),
-   A('English: Four Knights','A28','<strong>9…exf3</strong> — Black releases the tension.'),
-   A('English: Four Knights','A28','<strong>10.Nxf3</strong> — Recapture with development. The position becomes a strategic middlegame with bishop-pair chances.'),
-   A('English: Four Knights','A28','<strong>10…d6</strong> — Black stabilizes the center. Our next priorities are d3, e4 ideas, and activating the bishops.'),
-   A('English: Four Knights','A28','<strong>11.d3</strong> — Finish the center and prepare e4 or Bf4 depending on Black’s setup.'),
-   A('English: Four Knights','A28','<strong>11…h6</strong> — Black asks the g5 knight where it belongs.'),
-   A('English: Four Knights','A28','<strong>12.e4</strong> — Build the center now that Black’s advanced e-pawn has been exchanged. The bishop pair and central space become our long-term assets.')]
+ ['e4','e5','Nf3','Nc6','Bc4','Bc5','d3','Nf6','O-O','d6','c3','O-O','Re1','a6','Bb3','Ba7','Nbd2','Re8','Nf1','h6','Ng3'],
+ [A('King Pawn Opening','C20','<strong>1.e4</strong> — Take central space immediately. Your default White repertoire now aims for open lines, quick development, and concrete decisions.'),
+  A('Open Game','C20','<strong>1…e5</strong> — Develop with tempo: Nf3 attacks e5 and prepares the Italian.'),
+  A('Open Game','C40','<strong>2.Nf3</strong> — Develop and attack e5. Avoid early queen moves; make Black solve real development problems.'),
+  N,A('Italian Game','C50','<strong>3.Bc4</strong> — The Italian. Pressure f7, castle quickly, then choose the right central break.'),
+  A('Italian Game: Giuoco Piano','C50','<strong>3…Bc5</strong> — Main line. Use d3/c3/O-O/Re1 and prepare d4 when it is tactically sound.'),
+  A('Italian Game','C50','<strong>4.d3</strong> — Keep e4 solid and develop before opening the center.'),N,
+  A('Italian Game','C50','<strong>5.O-O</strong> — King safe first. Your next setup is c3, Re1, Nbd2-f1-g3.'),N,
+  A('Italian Game','C50','<strong>6.c3</strong> — Supports d4 and gives the bishop c2 if Black attacks it.'),N,
+  A('Italian Game','C50','<strong>7.Re1</strong> — Reinforce e4 and make d4 more realistic.'),N,
+  A('Italian Game','C50','<strong>8.Bb3</strong> — Preserve the bishop and keep pressure on f7.'),N,
+  A('Italian Game','C50','<strong>9.Nbd2</strong> — Begin the classic Nf1-g3 maneuver. Improve the worst piece before attacking.'),N,
+  A('Italian Game','C50','<strong>10.Nf1</strong> — Route to g3, where the knight supports f5/h5 and central play.'),N,
+  A('Italian Game','C50','<strong>11.Ng3</strong> — Development is complete; now calculate d4, h3, or a4 based on Black’s setup.')]
 );
-
-// Line 2: Botvinnik vs 1...Nc6 (Closed)
 registerLine(
-  ['c4','e5','Nc3','Nc6','g3','g6','Bg2','Bg7','d3','d6','e4','Nge7','Nge2','O-O','O-O','Be6','Nd5','f5'],
-  [N,N,N,
-   A('English: Closed','A26','<strong>2…Nc6</strong> — Black heads for a King\'s Indian structure. White mirrors with the Botvinnik setup.'),
-   N,
-   A('English: Closed','A26','<strong>3…g6</strong> — Double fianchetto battle. Both Bg2 and Bg7 fight for the long diagonal.'),
-   N,
-   A('English: Closed','A26','<strong>4…Bg7</strong> — Mirror position. White plays d3 for flexibility, then e4 for space.'),
-   N,N,
-   A('English: Closed — e4','A26','<strong>6.e4!</strong> — Space! White has a strong pawn centre. Plan: Nge2, O-O, Nd5.'),
-  ]
+ ['e4','e5','Nf3','Nc6','Bc4','Nf6','d3','Bc5','O-O','d6','c3','O-O','Re1','a6','Bb3','Ba7','Nbd2','Re8','Nf1'],
+ [N,N,N,N,N,A('Italian: Two Knights','C55','<strong>3…Nf6</strong> — Stay in Italian territory with 4.d3. No need to enter a memorization-heavy Ng5 fight.'),
+  A('Italian: Two Knights','C55','<strong>4.d3</strong> — Solid center, fast castling, then c3/Re1 and a timed d4.'),N,N,N,
+  A('Italian: Two Knights','C55','<strong>6.c3</strong> — Prepare d4 while keeping the center stable.'),N,
+  A('Italian: Two Knights','C55','<strong>7.Re1</strong> — Finish the setup before looking for tactics.')]
 );
-
-// Line 3: Symmetrical — Four Knights d4 into Maroczy
 registerLine(
-  ['c4','c5','Nf3','Nf6','Nc3','Nc6','d4','cxd4','Nxd4','g6','e4','Bg7','Be2','O-O','O-O','d6','Be3','Bd7','Qd2','Nxd4','Bxd4','Bc6','f3','a5','b3'],
-  [N,
-   A('English: Symmetrical','A30','<strong>1…c5</strong> — Symmetrical. Black mirrors White. The key: White breaks symmetry with d4 at the right moment.'),
-   A('English: Symmetrical','A30','<strong>2.Nf3</strong> — Flexible. White prepares d4.'),
-   N,
-   A('English: Four Knights','A33','<strong>3.Nc3</strong> — Four knights. Now <strong>4.d4!</strong> breaks the symmetry.'),
-   N,
-   A('English: Four Knights — d4','A33','<strong>4.d4!</strong> — The critical central break! White seizes the initiative.'),
-   A('English: Symmetrical Exchange','A33','<strong>4…cxd4 5.Nxd4</strong> — Black trades. White recaptures and plays e4 for the Maroczy Bind.'),
-   N,
-   A('English: Maroczy Bind','A36','<strong>5…g6</strong> — Black fianchettoes. White plays <strong>6.e4!</strong> to establish the Maroczy Bind.'),
-   A('English: Maroczy Bind','A36','<strong>6.e4!</strong> — Pawns on c4 and e4 clamp down on d5. Black has no space. Plan: Be2, O-O, Be3.'),
-  ]
+ ['e4','e5','Nf3','Nc6','Bc4','Be7','d3','Nf6','O-O','O-O','Re1','d6','c3','Na5','Bb5','c6','Ba4'],
+ [N,N,N,N,N,A('Italian: Hungarian Defence','C50','<strong>3…Be7</strong> — Black is passive. Don’t force anything: develop, castle, and claim space.'),
+  A('Italian: Hungarian Defence','C50','<strong>4.d3</strong> — Keep the center healthy and prepare c3/d4.'),N,N,N,
+  A('Italian: Hungarian Defence','C50','<strong>6.Re1</strong> — Support e4 and prepare expansion.'),N,
+  A('Italian: Hungarian Defence','C50','<strong>7.c3</strong> — d4 is the strategic goal once your pieces are ready.')]
 );
-
-// Line 4: Symmetrical — Hedgehog
 registerLine(
-  ['c4','c5','Nf3','e6','Nc3','a6','g3','b5','cxb5','axb5','Bg2','Bb7','O-O','Nf6','b3','d6','Bb2','Nbd7','d4','cxd4','Nxd4','Qb6'],
-  [N,N,N,
-   A('English: Hedgehog','A30','<strong>2…e6</strong> — Black prepares the Hedgehog: a6, b5, d6, Bb7. A coiled spring waiting to strike.'),
-   N,
-   A('English: Hedgehog','A30','<strong>3…a6</strong> — Preparing b5 to break the c4 grip. The Hedgehog is resilient and explosive.'),
-  ]
+ ['e4','e5','Nf3','d6','d4','exd4','Nxd4','Nf6','Nc3','Be7','Be2','O-O','O-O','Re8','Re1','Bf8','Bf1'],
+ [N,N,N,A('Philidor Defence','C41','<strong>2…d6</strong> — Black gives you room. Play d4 and use your lead in space.'),
+  A('Philidor Defence','C41','<strong>3.d4</strong> — Challenge the center immediately.'),N,
+  A('Philidor Defence','C41','<strong>4.Nxd4</strong> — Recapture with development and keep active pieces.'),N,
+  A('Philidor Defence','C41','<strong>5.Nc3</strong> — Simple development; castle and use the extra space.')]
 );
-
-// Line 5: Anglo-Grünfeld
 registerLine(
-  ['c4','Nf6','Nc3','d5','cxd5','Nxd5','g3','g6','Bg2','Bg7','Nf3','O-O','O-O','Nc6','Nxd5','Qxd5','d3','Qd6','Be3','Rd8','Qa4','a6','Rfd1'],
-  [N,
-   A('English vs 1…Nf6','A15','<strong>1…Nf6</strong> — Flexible. White heads for the Anglo-Grünfeld with cxd5 Nxd5 g3.'),
-   A('English: Anglo-Indian','A16','<strong>2.Nc3</strong> — Developing toward d5. After d5 cxd5 Nxd5 g3 we reach the Anglo-Grünfeld.'),
-   A('English: Anglo-Grünfeld','A16','<strong>2…d5</strong> — Central challenge. White trades and builds the fianchetto with an extra tempo.'),
-   A('English: Anglo-Grünfeld','A16','<strong>3.cxd5 Nxd5</strong> — White trades, then g3 begins the fianchetto.'),
-   N,
-   A('English: Anglo-Grünfeld','A16','<strong>4.g3</strong> — Fianchetto. White will castle and then challenge with e4.'),
-   N,
-   A('English: Anglo-Grünfeld','A16','<strong>5.Bg2</strong> — The bishop eyes the long diagonal. Both sides castle and a balanced fight begins.'),
-  ]
+ ['e4','c5','c3','Nf6','e5','Nd5','d4','cxd4','Nf3','Nc6','cxd4','d6','Bc4','dxe5','dxe5','e6','O-O'],
+ [N,A('Sicilian Defence','B20','<strong>1…c5</strong> — Use the Alapin. You get an immediate center and positions that reward calculation more than Sicilian theory memorization.'),
+  A('Sicilian: Alapin','B22','<strong>2.c3</strong> — Prepare d4 and build a broad center.'),N,
+  A('Sicilian: Alapin','B22','<strong>3.e5</strong> — Gain space and kick the f6 knight.'),N,
+  A('Sicilian: Alapin','B22','<strong>4.d4</strong> — Establish the center before finishing development.'),N,
+  A('Sicilian: Alapin','B22','<strong>5.Nf3</strong> — Develop while supporting d4/e5.')]
 );
-
-// Line 6: Anglo-Indian / King's Indian English
 registerLine(
-  ['c4','Nf6','Nc3','g6','g3','Bg7','Bg2','O-O','Nf3','d6','O-O','Nc6','d4','Nxd4','Nxd4'],
-  [N,N,N,
-   A('English: King\'s Indian setup','A15','<strong>2…g6</strong> — Black heads for a King\'s Indian structure. White uses d4 to get an IQP position.'),
-  ]
+ ['e4','c5','c3','d5','exd5','Qxd5','d4','Nf6','Nf3','e6','Be2','Be7','O-O','O-O'],
+ [N,N,N,A('Sicilian: Alapin — ...d5','B22','<strong>2…d5</strong> — Black challenges immediately. Exchange once, then build with d4/Nf3.'),
+  A('Sicilian: Alapin','B22','<strong>3.exd5</strong> — Clarify the center and gain tempi against the queen.'),N,
+  A('Sicilian: Alapin','B22','<strong>4.d4</strong> — Occupy the center and develop naturally.')]
+);
+registerLine(
+ ['e4','e6','d4','d5','e5','c5','c3','Nc6','Nf3','Qb6','Bd3','cxd4','cxd4','Bd7','O-O','Nxd4','Nxd4','Qxd4','Nc3'],
+ [N,A('French Defence','C00','<strong>1…e6</strong> — Choose the Advance: grab space and learn to defend the d4/e5 pawn chain.'),
+  A('French Defence','C00','<strong>2.d4</strong> — Build the classical center.'),N,
+  A('French: Advance','C02','<strong>3.e5</strong> — Space. Your strategic job is to support d4 and attack the kingside when Black’s counterplay is contained.'),N,
+  A('French: Advance','C02','<strong>4.c3</strong> — Reinforce d4 before developing.'),N,
+  A('French: Advance','C02','<strong>5.Nf3</strong> — Develop and prepare Bd3/O-O.'),N,
+  A('French: Advance','C02','<strong>6.Bd3</strong> — Active development. If Black grabs d4 later, use development tempi rather than panicking about a pawn.')]
+);
+registerLine(
+ ['e4','c6','d4','d5','e5','Bf5','Nf3','e6','Be2','c5','O-O','Nc6','Be3','cxd4','Nxd4','Nxd4','Bxd4'],
+ [N,A('Caro-Kann Defence','B10','<strong>1…c6</strong> — As White, use the Advance. You already understand the Caro structures from the Black side.'),
+  A('Caro-Kann','B12','<strong>2.d4</strong> — Take the center.'),N,
+  A('Caro-Kann: Advance','B12','<strong>3.e5</strong> — Gain space and make Black prove the c8 bishop can justify the tempo.'),N,
+  A('Caro-Kann: Advance','B12','<strong>4.Nf3</strong> — Simple development; Be2/O-O follows.'),N,
+  A('Caro-Kann: Advance','B12','<strong>5.Be2</strong> — Keep the position sound and prepare to castle.')]
+);
+registerLine(
+ ['e4','d5','exd5','Qxd5','Nc3','Qd8','d4','Nf6','Nf3','c6','Bc4','Bf5','O-O','e6','Re1'],
+ [N,A('Scandinavian Defence','B01','<strong>1…d5</strong> — Take the pawn and develop with tempo against the queen.'),
+  A('Scandinavian Defence','B01','<strong>2.exd5</strong> — The cleanest response.'),N,
+  A('Scandinavian Defence','B01','<strong>3.Nc3</strong> — Develop while attacking the queen.'),N,
+  A('Scandinavian Defence','B01','<strong>4.d4</strong> — Claim the center while Black has spent queen tempi.')]
+);
+registerLine(
+ ['e4','d6','d4','Nf6','Nc3','g6','f4','Bg7','Nf3','O-O','Bd3','Nc6','O-O','e5','dxe5','dxe5','fxe5'],
+ [N,A('Pirc Defence','B07','<strong>1…d6</strong> — Build the Austrian center: d4, Nc3, f4. Make Black’s hypermodern setup prove itself.'),
+  A('Pirc Defence','B07','<strong>2.d4</strong> — Take central space.'),N,
+  A('Pirc Defence','B07','<strong>3.Nc3</strong> — Support e4 and prepare f4.'),N,
+  A('Pirc: Austrian Attack','B09','<strong>4.f4</strong> — The thematic aggressive setup. Develop before launching e5/f5.')]
+);
+registerLine(
+ ['e4','g6','d4','Bg7','Nc3','d6','f4','Nf6','Nf3','O-O','Bd3','Na6','O-O','c5','d5'],
+ [N,A('Modern Defence','B06','<strong>1…g6</strong> — Treat it like a Pirc: occupy the center and use the Austrian setup.'),
+  A('Modern Defence','B06','<strong>2.d4</strong> — Build the center.'),N,
+  A('Modern Defence','B06','<strong>3.Nc3</strong> — Support e4 and prepare f4.'),N,
+  A('Modern Defence','B06','<strong>4.f4</strong> — Space first; then Nf3/Bd3/O-O and a well-timed e5.')]
+);
+registerLine(
+ ['e4','Nf6','e5','Nd5','d4','d6','Nf3','dxe5','Nxe5','c6','Be2','Bf5','O-O','e6','c4'],
+ [N,A('Alekhine Defence','B02','<strong>1…Nf6</strong> — Gain space with e5, but don’t chase the knight forever.'),
+  A('Alekhine Defence','B02','<strong>2.e5</strong> — Take space and make the knight move.'),N,
+  A('Alekhine Defence','B03','<strong>3.d4</strong> — Build a real center, then develop it instead of adding more pawn moves.')]
 );
 
 // ════ CARO-KANN LINES ════════════════════════════════════════════════════════
@@ -261,16 +265,18 @@ registerLine(
 
 // ─── DRILL LINE DEFINITIONS ──────────────────────────────────────────────────
 const DLINES=[
-  {id:'e-e5-4n',label:'English: Four Knights vs 1…e5',       group:'English (White)', color:'white', sans:['c4','e5','Nc3','Nf6','Nf3','Nc6','g3','Bb4','Bg2','O-O','O-O','e4','Ng5','Bxc3','bxc3','Re8','f3','exf3','Nxf3','d6','d3','h6','e4']},
-  {id:'e-e5-cl',label:'English: Closed / Botvinnik setup',   group:'English (White)', color:'white', sans:['c4','e5','Nc3','Nc6','g3','g6','Bg2','Bg7','d3','d6','e4','Nge7','Nge2','O-O','O-O','Be6','Nd5','f5']},
-  {id:'e-sym',  label:'English: Symmetrical / Maroczy',      group:'English (White)', color:'white', sans:['c4','c5','Nf3','Nf6','Nc3','Nc6','d4','cxd4','Nxd4','g6','e4','Bg7','Be2','O-O','O-O','d6','Be3','Bd7','Qd2','Nxd4','Bxd4','Bc6','f3','a5','b3']},
-  {id:'e-hedge',label:'English: Hedgehog',                    group:'English (White)', color:'white', sans:['c4','c5','Nf3','e6','Nc3','a6','g3','b5','cxb5','axb5','Bg2','Bb7','O-O','Nf6','b3','d6','Bb2','Nbd7','d4','cxd4','Nxd4','Qb6']},
-  {id:'e-grun', label:'English: Anglo-Grünfeld',              group:'English (White)', color:'white', sans:['c4','Nf6','Nc3','d5','cxd5','Nxd5','g3','g6','Bg2','Bg7','Nf3','O-O','O-O','Nc6','Nxd5','Qxd5','d3','Qd6','Be3','Rd8','Qa4','a6','Rfd1']},
-  {id:'e-kid',  label:'English: King’s Indian setup',         group:'English (White)', color:'white', sans:['c4','Nf6','Nc3','g6','g3','Bg7','Bg2','O-O','Nf3','d6','O-O','Nc6','d4','Nxd4','Nxd4']},
-  {id:'e-e6',   label:'English: vs ...e6 / QGD setup',        group:'English (White)', color:'white', sans:['c4','e6','Nc3','d5','d4','Nf6','Nf3','Be7','Bg5','O-O','e3','Nbd7','Rc1','c6','Bd3','dxc4','Bxc4']},
-  {id:'e-c6',   label:'English: vs ...c6',                    group:'English (White)', color:'white', sans:['c4','c6','Nf3','d5','g3','Nf6','Bg2','g6','O-O','Bg7','d4','O-O','Nc3','dxc4','a4','Na6','e4']},
-  {id:'e-dutch',label:'English: vs ...f5 Dutch setup',        group:'English (White)', color:'white', sans:['c4','f5','Nc3','Nf6','g3','g6','Bg2','Bg7','d3','O-O','e4','d6','Nge2','e5','O-O','Nc6']},
-  {id:'e-b6',   label:'English: vs ...b6',                    group:'English (White)', color:'white', sans:['c4','b6','Nc3','Bb7','e4','e6','Nf3','Bb4','d3','f5','exf5','exf5','Be2','Nf6','O-O','O-O']},
+ {id:'it-main',label:'Italian: Giuoco Piano main line',group:'1.e4 / Italian (White)',color:'white',sans:['e4','e5','Nf3','Nc6','Bc4','Bc5','d3','Nf6','O-O','d6','c3','O-O','Re1','a6','Bb3','Ba7','Nbd2','Re8','Nf1','h6','Ng3']},
+ {id:'it-2n',label:'Italian: Two Knights · quiet d3',group:'1.e4 / Italian (White)',color:'white',sans:['e4','e5','Nf3','Nc6','Bc4','Nf6','d3','Bc5','O-O','d6','c3','O-O','Re1','a6','Bb3','Ba7','Nbd2','Re8','Nf1']},
+ {id:'it-hung',label:'Italian: vs ...Be7 Hungarian',group:'1.e4 / Italian (White)',color:'white',sans:['e4','e5','Nf3','Nc6','Bc4','Be7','d3','Nf6','O-O','O-O','Re1','d6','c3','Na5','Bb5','c6','Ba4']},
+ {id:'e4-phil',label:'1.e4: Philidor',group:'1.e4 Other Defences (White)',color:'white',sans:['e4','e5','Nf3','d6','d4','exd4','Nxd4','Nf6','Nc3','Be7','Be2','O-O','O-O','Re8','Re1','Bf8','Bf1']},
+ {id:'e4-sic-nf6',label:'Sicilian: Alapin vs ...Nf6',group:'1.e4 Other Defences (White)',color:'white',sans:['e4','c5','c3','Nf6','e5','Nd5','d4','cxd4','Nf3','Nc6','cxd4','d6','Bc4','dxe5','dxe5','e6','O-O']},
+ {id:'e4-sic-d5',label:'Sicilian: Alapin vs ...d5',group:'1.e4 Other Defences (White)',color:'white',sans:['e4','c5','c3','d5','exd5','Qxd5','d4','Nf6','Nf3','e6','Be2','Be7','O-O','O-O']},
+ {id:'e4-fr',label:'French: Advance',group:'1.e4 Other Defences (White)',color:'white',sans:['e4','e6','d4','d5','e5','c5','c3','Nc6','Nf3','Qb6','Bd3','cxd4','cxd4','Bd7','O-O','Nxd4','Nxd4','Qxd4','Nc3']},
+ {id:'e4-ck',label:'Caro-Kann: Advance as White',group:'1.e4 Other Defences (White)',color:'white',sans:['e4','c6','d4','d5','e5','Bf5','Nf3','e6','Be2','c5','O-O','Nc6','Be3','cxd4','Nxd4','Nxd4','Bxd4']},
+ {id:'e4-scandi',label:'Scandinavian: main setup',group:'1.e4 Other Defences (White)',color:'white',sans:['e4','d5','exd5','Qxd5','Nc3','Qd8','d4','Nf6','Nf3','c6','Bc4','Bf5','O-O','e6','Re1']},
+ {id:'e4-pirc',label:'Pirc: Austrian setup',group:'1.e4 Other Defences (White)',color:'white',sans:['e4','d6','d4','Nf6','Nc3','g6','f4','Bg7','Nf3','O-O','Bd3','Nc6','O-O','e5','dxe5','dxe5','fxe5']},
+ {id:'e4-modern',label:'Modern: Austrian setup',group:'1.e4 Other Defences (White)',color:'white',sans:['e4','g6','d4','Bg7','Nc3','d6','f4','Nf6','Nf3','O-O','Bd3','Na6','O-O','c5','d5']},
+ {id:'e4-alekh',label:'Alekhine: Classical center',group:'1.e4 Other Defences (White)',color:'white',sans:['e4','Nf6','e5','Nd5','d4','d6','Nf3','dxe5','Nxe5','c6','Be2','Bf5','O-O','e6','c4']},
   {id:'ck-cls', label:'Caro-Kann: Classical Karpov',          group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','Nc3','dxe4','Nxe4','Bf5','Ng3','Bg6','h4','h6','Nf3','Nd7','h5','Bh7','Bd3','Bxd3','Qxd3','e6','Bd2','Ngf6','O-O-O','Be7','Ne4','Nxe4','Qxe4','Nf6','Qh4','O-O','Ne5','Nd7','Nxd7','Qxd7','Qe4']},
   {id:'ck-cls2',label:'Caro-Kann: Classical early Nf3',       group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','Nc3','dxe4','Nxe4','Bf5','Nf3','Nd7','Ng3','Bg6','h4','h6','Bd3','Bxd3','Qxd3','e6','Bd2','Ngf6','O-O-O','Be7','Kb1']},
   {id:'ck-adv', label:'Caro-Kann: Advance (Short)',           group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','e5','Bf5','Nf3','e6','Be2','Nd7','O-O','Ne7','Nbd2','h6','Nb3','g5','Nfd2','Bg6','c3','c5','dxc5']},
@@ -281,14 +287,8 @@ const DLINES=[
   {id:'ck-fan', label:'Caro-Kann: Fantasy',                   group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d4','d5','f3','dxe4','fxe4','e5','Nf3','exd4','Bc4','Nf6','O-O','Be7','e5','Nd5']},
   {id:'ck-hill',label:'Caro-Kann: Hillbilly',                 group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','Bc4','d5','exd5','cxd5','Bb5+','Nc6','d4','Nf6','Nf3','Bf5','O-O','e6']},
   {id:'ck-d3',  label:'Caro-Kann: Quiet 2.d3',                group:'Caro-Kann (Black)', color:'black', sans:['e4','c6','d3','d5','Nd2','e5','Ngf3','Bd6','g3','Nf6','Bg2','O-O','O-O','Re8']},
-
-  {id:'e-e6-ex',label:'English: vs ...e6 — Exchange/QGD structure', group:'English (White)', color:'white',
-   sans:['c4','e6','Nc3','d5','cxd5','exd5','d4','Nf6','Nf3','Be7','g3','O-O','Bg2','c6','O-O','Bf5','Bf4','Nbd7','Rc1','Re8','Re1']},
-  {id:'e-sym-e6',label:'English: Symmetrical — ...e6 / central break', group:'English (White)', color:'white',
-   sans:['c4','c5','Nf3','Nc6','Nc3','Nf6','g3','e6','Bg2','d5','d4','cxd4','Nxd4','Bc5','Nb3','Be7','O-O','O-O','e4','d4','Ne2']},
   {id:'ck-ex-nf3',label:'Caro-Kann: Exchange — Nf3/Bd3 setup', group:'Caro-Kann (Black)', color:'black',
    sans:['e4','c6','d4','d5','exd5','cxd5','Nf3','Nc6','Bd3','Bg4','c3','e6','Bf4','Bd6','Bxd6','Qxd6','Nbd2','Nge7','O-O','O-O']},
   {id:'ck-adv-nc3',label:'Caro-Kann: Advance — 4.Nc3 / g4', group:'Caro-Kann (Black)', color:'black',
    sans:['e4','c6','d4','d5','e5','Bf5','Nc3','e6','g4','Bg6','Nge2','c5','h4','h5','Nf4','Bh7','g5','cxd4','Qxd4','Ne7']},
-
 ];
