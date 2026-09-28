@@ -1,4 +1,13 @@
-# ChessTool V2.29
+# ChessTool V2.30
+
+## New in V2.30 — inflection-point puzzles
+
+Puzzle feedback: old puzzles often showed already-lost positions. The puzzle set
+is now rebuilt with an inflection-point filter — every puzzle is the move that
+*lost the game*: eval before the move is >= -1.5 (not already lost) and the drop
+is >= 2.5 pawns. Each puzzle shows the swing (e.g. "you went from +3.2 to mate
+in one move") and is tagged even-to-lost / won-to-even / won-to-lost.
+80 puzzles from the 50 most recent rapid losses, max 3 per game.
 
 ## New in V2.29 — honest insights
 
