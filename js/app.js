@@ -817,6 +817,7 @@ function renderIntegratedPlan(){
 
 function onSqClick(rank,file){
   if(MISTAKE_REPLAY){mistakeReplayClick(rank,file);return;}
+  if(PUZZLE&&MODE==='puzzles'){puzzleClick(rank,file);return;}
   if(MODE==='bot'){botClick(rank,file);return;}
   if(MODE!=='drill')return;
   if(!SESSION_STARTED||PRACTICE_LOCK)return;
@@ -903,7 +904,7 @@ function selectLineFamily(which){
     if(which==='all'||l.color===which)SEL_LINES.add(l.id);
   });
   buildLineSelector();
-  const label=which==='white'?'1.e4 / Italian only':which==='black'?'Caro-Kann only':'all 1.e4 + Caro-Kann';
+  const label=which==='white'?'1.e4 / Italian only':which==='black'?'Caro-Kann + Slav only':'all 1.e4 + Caro-Kann + Slav';
   setStat('Selected '+label+'. Press Start Session.','info');
   setCoach('Selected '+label+'.');
 }
@@ -942,7 +943,8 @@ const PLAN_LINE_MAP={
   'e4-pirc':'e4-pirc','e4-modern':'e4-pirc','e4-alekh':'e4-open',
   'ck-cls':'ck-class','ck-cls2':'ck-class',
   'ck-adv':'ck-adv','ck-tal':'ck-adv','ck-adv-nc3':'ck-adv','ck-panov':'ck-panov','ck-ex':'ck-exchange','ck-ex-nf3':'ck-exchange',
-  'ck-2k':'ck-two','ck-fan':'ck-fantasy','ck-hill':'ck-hill','ck-d3':'ck-d3'
+  'ck-2k':'ck-two','ck-fan':'ck-fantasy','ck-hill':'ck-hill','ck-d3':'ck-d3',
+  'slav-main':'slav-bf5','slav-alt':'slav-bf5','slav-e3':'slav-bf5','slav-nc3':'slav-bf5','slav-ex':'ck-exchange'
 };
 function historyFromSans(sans){
   const hist=[INIT];let fen=INIT;
@@ -1118,6 +1120,12 @@ function practiceAutoReply(){
 
 function doHint(){
   if(MODE==='bot'){setStat('No hints in bot mode.','bad');return;}
+  if(MODE==='puzzles'){
+    if(!PUZZLE){setStat('No puzzle loaded.','info');return;}
+    if(PUZZLE.validating){setStat('Wait for fresh Stockfish verification first.','info');return;}
+    if(PUZZLE.bestSan){setStat('💡 Best move: '+PUZZLE.bestSan,'info');setCoach('Hint: '+PUZZLE.bestSan+'. Before moving, explain to yourself what threat it answers.');}
+    return;
+  }
   if(MODE==='mistakes'){
     const r=MISTAKE_REPLAY;if(!r){setStat('No saved mistake position loaded.','info');return;}
     if(r.validating){setStat('Wait for fresh Stockfish verification first.','info');return;}
@@ -2258,6 +2266,10 @@ function drawMoveList(){
 
 // ─── CONTROLS ────────────────────────────────────────────────────────────────
 function goBack(){
+  if(PUZZLE&&MODE==='puzzles'){
+    resetPuzzlePosition(PUZZLE);
+    return;
+  }
   if(MISTAKE_REPLAY){
     const r=MISTAKE_REPLAY;
     FEN=r.fen;HIST=[r.fen];SANS=[];SEL=null;LDOTS=[];LF=null;LT=null;
@@ -2287,6 +2299,7 @@ function fullReset(){
 
 function doReset(){
   if(MODE==='mistakes'){startMistakeDrillPosition(MISTAKE_DRILL.index);return;}
+  if(MODE==='puzzles'&&PUZZLE){resetPuzzlePosition(PUZZLE);return;}
   const wasSession=SESSION_STARTED;
   fullReset();SESSION_STARTED=wasSession;
   FLIPPED=SESSION_COLOR==='black';drawBoard();
@@ -2299,19 +2312,21 @@ function doFlip(){FLIPPED=!FLIPPED;drawBoard();}
 
 // ─── MODE SWITCHING ───────────────────────────────────────────────────────────
 function setMode(mode){
-  MISTAKE_REPLAY=null;
+  MISTAKE_REPLAY=null;PUZZLE=null;
   MODE=mode;BOT_ACTIVE=false;SEL=null;LDOTS=[];SESSION_STARTED=false;PRACTICE_LOCK=false;STUDY_PHASE='opening';STUDY_PLAN=null;MID_FEEDBACK='';MID_PRE_ANALYSIS=null;
-  document.querySelectorAll('.nb').forEach((b,i)=>b.classList.toggle('on',['drill','mistakes','bot'][i]===mode));
+  document.querySelectorAll('.nb').forEach((b,i)=>b.classList.toggle('on',['drill','mistakes','bot','stats','puzzles'][i]===mode));
   show('linecard',mode==='drill');
   show('expcard',mode==='drill'||mode==='mistakes');
   show('midbotcard',mode==='drill');
   show('botcard',mode==='bot');
   show('trendcard',mode==='bot');
   show('mistakedrillcard',mode==='mistakes');
+  show('statscard',mode==='stats');
+  show('puzzlecard',mode==='puzzles');
   show('randbtn',mode==='drill');
   show('newgamebtn',mode==='bot');
   show('revbtn',false);
-  show('hintbtn',mode==='drill'||mode==='mistakes');
+  show('hintbtn',mode==='drill'||mode==='mistakes'||mode==='puzzles');
   document.getElementById('revcard').classList.add('hidden');
   document.getElementById('reviewdock')?.classList.add('hidden');
   document.getElementById('gameoveroverlay')?.classList.add('hidden');
@@ -2330,6 +2345,14 @@ function setMode(mode){
     const m='Play a complete game, then review it move by move.';
     setStat(m,'info');setCoach(m);initSF();
   }
+  if(mode==='stats'){
+    const m='Your chess.com game stats and trends. Use Sync to pull your latest games.';
+    setStat(m,'info');setCoach(m);renderStats();
+  }
+  if(mode==='puzzles'){
+    const m='My Blunders: positions from your real chess.com games. Stockfish freshly verifies every answer.';
+    setStat(m,'info');setCoach(m);initSF();startPuzzleSession();
+  }
 }
 
 function show(id,visible){
@@ -2337,7 +2360,636 @@ function show(id,visible){
   if(visible)el.classList.remove('hidden');else el.classList.add('hidden');
 }
 
-console.info('ChessTool V2.26 loaded: progress trends + adaptive saved-mistake drill');
+// ─── STATS TAB ────────────────────────────────────────────────────────────────
+const STATS_CACHE_KEY='chesstool_stats_cache';
+function bundledStats(){
+  return (typeof MYGAMES_STATS!=='undefined'&&MYGAMES_STATS&&MYGAMES_STATS.games&&MYGAMES_STATS.games.length)?MYGAMES_STATS:null;
+}
+function statsData(){
+  try{
+    const raw=localStorage.getItem(STATS_CACHE_KEY);
+    if(raw){const c=JSON.parse(raw);if(c&&c.stats&&c.stats.games&&c.stats.games.length)return c.stats;}
+  }catch(e){}
+  return bundledStats();
+}
+function statsScore(w,l,d){const t=w+l+d;return t?((w+0.5*d)/t*100):0;}
+function aggStats(games){
+  const months={},controls={},openings={};
+  const byColor={white:{w:0,l:0,d:0},black:{w:0,l:0,d:0}};
+  const endings={checkmateWin:0,checkmateLoss:0,resignWin:0,resignLoss:0,timeoutWin:0,timeoutLoss:0,draw:0};
+  let moves=0;
+  for(const g of games){
+    const mk=(g.d||'').slice(0,7);
+    const b=months[mk]||(months[mk]={label:mk,games:0,w:0,l:0,d:0});
+    b.games++;b[g.s]++;
+    const c=controls[g.c]||(controls[g.c]={games:0,w:0,l:0,d:0});
+    c.games++;c[g.s]++;
+    const o=openings[g.o]||(openings[g.o]={name:g.o,games:0,w:0,l:0,d:0});
+    o.games++;o[g.s]++;
+    byColor[g.col==='w'?'white':'black'][g.s]++;
+    if(g.s==='d')endings.draw++;
+    else endings[(g.t||'resign')+(g.s==='w'?'Win':'Loss')]++;
+    moves+=g.m||0;
+  }
+  const W=games.filter(g=>g.s==='w').length,L=games.filter(g=>g.s==='l').length,D=games.length-W-L;
+  return{months:Object.keys(months).sort().map(k=>months[k]),controls,
+    openings:Object.values(openings).filter(o=>o.games>=3).sort((a,b)=>b.games-a.games),
+    byColor,endings,total:{games:games.length,W,L,D},avgMoves:games.length?+(moves/games.length).toFixed(1):0};
+}
+function buildInsights(agg,games,deep,eng){
+  const out=[],t=agg.total,rg=deep?deep.resign:null;
+  out.push('Record: '+t.W+'W–'+t.L+'L–'+t.D+'D across '+t.games+' games ('+statsScore(t.W,t.L,t.D).toFixed(0)+'% score).');
+  if(rg&&t.L){
+    out.push('You resign only '+rg.myResignRate.toFixed(0)+'% of your losses while opponents resign '+rg.oppResignRate.toFixed(0)+
+      '% of theirs — that is why '+rg.mateLossShare.toFixed(0)+'% of your losses end in checkmate vs '+rg.mateWinShare.toFixed(0)+
+      '% of your wins. You play dead positions out; they don\u2019t.');
+  }
+  if(deep&&deep.tilt){
+    const tl=deep.tilt;
+    if(tl.afterLoss.winPct!=null&&tl.baseline!=null){
+      const d=tl.baseline-tl.afterLoss.winPct;
+      out.push('Tilt check: '+tl.afterLoss.winPct.toFixed(0)+'% wins in the game right after a loss vs '+tl.baseline.toFixed(0)+
+        '% baseline ('+tl.afterLoss.n+' games) — '+(Math.abs(d)<5?'no real tilt.':'real tilt: take a break after losses.'));
+    }
+    const s1=tl.sessPos['1'],s3=tl.sessPos['3+'];
+    if(s1.winPct!=null&&s3.winPct!=null)
+      out.push('Session fatigue: game 1 of a session '+s1.winPct.toFixed(0)+'% wins vs game 3+ '+s3.winPct.toFixed(0)+'% ('+s3.n+' games).');
+  }
+  if(eng&&eng.mateLosses&&eng.mateLosses.avgDeadLostMoves!=null)
+    out.push('Engine check of '+eng.mateLosses.n+' recent losses: you played '+eng.mateLosses.avgDeadLostMoves+
+      ' moves on average after the position was dead lost (\u22125.0). Opponents in your wins resigned after '+
+      eng.resignWins.avgDeadLostMoves+' dead-lost moves.');
+  if(eng&&eng.thrownWins)
+    out.push('You were +3.0 or better and still lost '+eng.thrownWins+' of the '+eng.mateLosses.n+' sampled losses — conversion is a leak.');
+  if(eng&&eng.comebacks)
+    out.push('Comebacks: you were \u22123.0 or worse and still won '+eng.comebacks+' of the '+eng.resignWins.n+' sampled wins.');
+  const bw=agg.byColor.white,bb=agg.byColor.black;
+  out.push('As White you score '+statsScore(bw.w,bw.l,bw.d).toFixed(0)+'%; as Black '+statsScore(bb.w,bb.l,bb.d).toFixed(0)+'%.');
+  const pool=agg.openings.filter(o=>o.games>=5);
+  if(pool.length){
+    const sc=o=>statsScore(o.w,o.l,o.d);
+    const best=pool.slice().sort((a,b)=>sc(b)-sc(a))[0];
+    const worst=pool.slice().sort((a,b)=>sc(a)-sc(b))[0];
+    out.push('Best opening (5+ games): '+best.name+' at '+sc(best).toFixed(0)+'% over '+best.games+' games.');
+    if(worst!==best)out.push('Worst opening (5+ games): '+worst.name+' at '+sc(worst).toFixed(0)+'% over '+worst.games+' games — consider tightening this.');
+  }
+  if(deep&&deep.ratingDiff.length){
+    const ub=deep.ratingDiff[deep.ratingDiff.length-1],lb=deep.ratingDiff[0];
+    if(ub.games>=5)out.push('As the underdog ('+ub.bucket+'): '+ub.actual.toFixed(0)+'% actual vs '+ub.expected.toFixed(1)+'% expected over '+ub.games+' games.');
+    if(lb.games>=5)out.push('As the favourite ('+lb.bucket+'): '+lb.actual.toFixed(0)+'% actual vs '+lb.expected.toFixed(1)+'% expected over '+lb.games+' games.');
+  }
+  const rap=games.filter(g=>g.c==='rapid'&&g.r!=null);
+  if(rap.length>1)out.push('Rapid rating: '+rap[0].r+' → '+rap[rap.length-1].r+' ('+(rap[rap.length-1].r-rap[0].r>=0?'+':'')+(rap[rap.length-1].r-rap[0].r)+') from '+rap[0].d+' to '+rap[rap.length-1].d+'.');
+  if(deep&&deep.pace&&deep.pace.rapid!=null)out.push('In rapid you average '+deep.pace.rapid.toFixed(1)+'s per move — that is blitz pace with 10 minutes on the clock. Slow down.');
+  if(deep){
+    const r=deep.rep.vsD4;
+    if(r.total>=5)out.push('Vs 1.d4 as Black you actually play 1...d5 '+(r.d5/r.total*100).toFixed(0)+'% of the time ('+r.total+' games) — the Slav fits your real repertoire.');
+    const w=deep.rep.asWhite;
+    if(w.total>=5)out.push('As White you open 1.e4 '+(w.e4/w.total*100).toFixed(0)+'% and 1.c4 '+(w.c4/w.total*100).toFixed(0)+'% ('+w.total+' games).');
+  }
+  out.push('Average game length: '+agg.avgMoves+' moves.');
+  out.push('Only '+agg.endings.timeoutLoss+' losses on time — time trouble is not your problem; moving too fast is.');
+  return out;
+}
+function focusOfWeek(agg,deep,eng){
+  const t=agg.total,cands=[];
+  // (1) Playing dead positions out — the honest version of the old "mated" stat.
+  if(eng&&eng.mateLosses&&eng.mateLosses.avgDeadLostMoves!=null&&eng.resignWins&&eng.resignWins.avgDeadLostMoves!=null){
+    const mine=eng.mateLosses.avgDeadLostMoves,theirs=eng.resignWins.avgDeadLostMoves;
+    if(mine>=Math.max(4,(theirs||0)*1.5))cands.push({sev:Math.min(1,mine/14),
+      title:'Playing dead positions out',
+      body:'Engine check of '+eng.mateLosses.n+' recent losses: you played '+mine+' moves on average after the position was dead lost (−5.0). Your opponents resigned after '+theirs+' dead-lost moves. This is where the "always mated" number really comes from.',
+      drill:'New rule: down a rook with no compensation, or clearly −5, resign and start fresh. Practise it in your next 3 bot games — notice how much sharper game 2 feels.'});
+  }else if(deep&&deep.resign.mateLossShare>=50&&deep.resign.myResignRate<25){
+    cands.push({sev:0.65,
+      title:'You never resign (they do)',
+      body:Math.round(deep.resign.mateLossShare)+'% of your losses end in checkmate because you play on — you resign '+
+        deep.resign.myResignRate.toFixed(0)+'% of losses vs opponents resigning '+deep.resign.oppResignRate.toFixed(0)+'% of theirs.',
+      drill:'Set a resign rule for dead positions and follow it for a week; compare your game-2 sharpness.'});
+  }
+  // (2) Tilt after losses
+  if(deep&&deep.tilt){
+    const tl=deep.tilt;
+    if(tl.afterLoss.winPct!=null&&tl.baseline!=null&&tl.baseline-tl.afterLoss.winPct>=8)
+      cands.push({sev:Math.min(1,(tl.baseline-tl.afterLoss.winPct)/35),
+        title:'Tilt after losses',
+        body:'You win '+tl.baseline.toFixed(0)+'% normally but only '+tl.afterLoss.winPct.toFixed(0)+'% in the game right after a loss ('+tl.afterLoss.n+' games).',
+        drill:'No instant rematches. After any loss, stand up for 2 minutes before queuing again.'});
+    // (3) Session fatigue
+    const s1=tl.sessPos['1'].winPct,s3=tl.sessPos['3+'].winPct;
+    if(s1!=null&&s3!=null&&s1-s3>=8)
+      cands.push({sev:Math.min(1,(s1-s3)/35),
+        title:'Session fatigue',
+        body:'Game 1 of a session: '+s1.toFixed(0)+'% wins. Game 3+: '+s3.toFixed(0)+'% over '+tl.sessPos['3+'].n+' games. Long sessions cost you real points.',
+        drill:'Cap serious sessions at 2 games, or take a 10-minute break after game 2.'});
+  }
+  // (4) Throwing won games
+  if(eng&&eng.thrownWins>=3)
+    cands.push({sev:Math.min(1,eng.thrownWins/8),
+      title:'Throwing won games',
+      body:'In '+eng.mateLosses.n+' sampled losses you reached +3.0 or better '+eng.thrownWins+' times and still lost. Conversion, not defence, is the leak.',
+      drill:'When ahead: trade pieces, not pawns. Do 10 “My Blunders” puzzles a day with a 2-second blunder-check before each move.'});
+  const pool=agg.openings.filter(o=>o.games>=5);
+  if(pool.length){
+    const sc=o=>statsScore(o.w,o.l,o.d);
+    const worst=pool.slice().sort((a,b)=>sc(a)-sc(b))[0];
+    const s=sc(worst);
+    if(s<45)cands.push({sev:(45-s)/45,
+      title:'Leaky opening: '+worst.name,
+      body:'You score only '+s.toFixed(0)+'% over '+worst.games+' games in the '+worst.name+'.',
+      drill:'Open Train, select just this line family, and drill it until the plans feel automatic — then add its middlegame blueprint.'});
+  }
+  const bw=agg.byColor.white,bb=agg.byColor.black;
+  const gap=Math.abs(statsScore(bw.w,bw.l,bw.d)-statsScore(bb.w,bb.l,bb.d));
+  if(gap>=8){
+    const weak=statsScore(bw.w,bw.l,bw.d)<statsScore(bb.w,bb.l,bb.d)?'White':'Black';
+    cands.push({sev:gap/100,
+      title:'Color gap: '+weak+' underperforms',
+      body:'You score '+statsScore(bw.w,bw.l,bw.d).toFixed(0)+'% as White vs '+statsScore(bb.w,bb.l,bb.d).toFixed(0)+'% as Black.',
+      drill:'Play your next 5 bot games as '+weak+' and review each one — look for where the '+weak+' plans break down.'});
+  }
+  if(!cands.length)return null;
+  cands.sort((a,b)=>b.sev-a.sev);
+  return cands[0];
+}
+// ─── DEEP STATS: honest aggregations from enriched per-game records ──────────
+function aggDeep(games){
+  const gs=games.slice().sort((a,b)=>((a.et||0)-(b.et||0))||(a.d<b.d?-1:1));
+  // session clustering if records lack it (e.g. freshly synced games)
+  if(gs.some(g=>g.spos==null)){
+    let sid=0,spos=0,last=null;
+    for(const g of gs){
+      const et=g.et||null;
+      if(et==null||last==null||et-last>45*60){sid++;spos=1;}else spos++;
+      g.sess=sid;g.spos=spos;
+      if(et!=null)last=et;
+    }
+  }
+  const t={W:0,L:0,D:0};
+  const e={checkmateWin:0,checkmateLoss:0,resignWin:0,resignLoss:0,timeoutWin:0,timeoutLoss:0,draw:0};
+  for(const g of gs){t[g.s==='w'?'W':g.s==='l'?'L':'D']++;if(g.s==='d')e.draw++;else e[(g.t||'resign')+(g.s==='w'?'Win':'Loss')]++;}
+  const resign={myResignRate:t.L?e.resignLoss/t.L*100:0,oppResignRate:t.W?e.resignWin/t.W*100:0,
+    mateLossShare:t.L?e.checkmateLoss/t.L*100:0,mateWinShare:t.W?e.checkmateWin/t.W*100:0};
+  // tilt + streaks + session position
+  const seq=gs.map(g=>g.s);
+  const afterLoss=[],after2=[];let streak=0;
+  for(let i=0;i<seq.length-1;i++){if(seq[i]==='l'){afterLoss.push(seq[i+1]);streak++;if(streak>=2)after2.push(seq[i+1]);}else streak=0;}
+  let maxw=0,maxl=0,cw=0,cl=0;
+  for(const s of seq){if(s==='w'){cw++;cl=0;maxw=Math.max(maxw,cw);}else if(s==='l'){cl++;cw=0;maxl=Math.max(maxl,cl);}else{cw=0;cl=0;}}
+  const sp={1:[],2:[],3:[]};
+  for(const g of gs){const k=(g.spos||1)<=2?(g.spos||1):3;sp[k].push(g.s);}
+  const wp=rs=>{const n=rs.length;return n?rs.filter(s=>s==='w').length/n*100:null;};
+  const tilt={baseline:wp(seq),afterLoss:{n:afterLoss.length,winPct:wp(afterLoss)},
+    after2Losses:{n:after2.length,winPct:wp(after2)},
+    maxWinStreak:maxw,maxLossStreak:maxl,
+    sessPos:{'1':{n:sp[1].length,winPct:wp(sp[1])},'2':{n:sp[2].length,winPct:wp(sp[2])},'3+':{n:sp[3].length,winPct:wp(sp[3])}}};
+  // score vs rating difference
+  const bfn=rd=>rd<-150?'<-150':rd<-50?'-150..-50':rd<=50?'-50..+50':rd<=150?'+50..+150':'>+150';
+  const bm={};
+  for(const g of gs){if(g.rd==null)continue;const b=bfn(g.rd);const o=bm[b]||(bm[b]={games:0,w:0,l:0,d:0,rd:0});o.games++;o[g.s]++;o.rd+=g.rd;}
+  const ratingDiff=['<-150','-150..-50','-50..+50','+50..+150','>+150'].filter(k=>bm[k]).map(k=>{
+    const o=bm[k],avg=o.rd/o.games;
+    return{bucket:k,games:o.games,actual:statsScore(o.w,o.l,o.d),expected:100/(1+Math.pow(10,-avg/400))};});
+  // time of day (hours already in America/Los_Angeles)
+  const todDef=[['Night 0–5',0,5],['Morning 6–11',6,11],['Afternoon 12–17',12,17],['Evening 18–23',18,23]];
+  const tod=todDef.map(td=>{const rs=gs.filter(g=>g.hod!=null&&g.hod>=td[1]&&g.hod<=td[2]).map(g=>g.s);
+    return{label:td[0],games:rs.length,winPct:wp(rs)};});
+  const wkd=gs.filter(g=>g.wd!=null&&g.wd<5).map(g=>g.s),wke=gs.filter(g=>g.wd!=null&&g.wd>=5).map(g=>g.s);
+  const dayType={weekday:{games:wkd.length,winPct:wp(wkd)},weekend:{games:wke.length,winPct:wp(wke)}};
+  // repertoire adherence from real first moves
+  const rep={vsD4:{total:0,d5:0,Nf6:0,other:0},vsE4:{total:0,c6:0,other:0},asWhite:{total:0,e4:0,c4:0,other:0}};
+  for(const g of gs){const fm=g.fm||[];if(fm.length<2)continue;
+    if(g.col==='w'){rep.asWhite.total++;rep.asWhite[fm[0]==='e4'?'e4':fm[0]==='c4'?'c4':'other']++;}
+    else if(fm[0]==='d4'){rep.vsD4.total++;rep.vsD4[fm[1]==='d5'?'d5':fm[1]==='Nf6'?'Nf6':'other']++;}
+    else if(fm[0]==='e4'){rep.vsE4.total++;rep.vsE4[fm[1]==='c6'?'c6':'other']++;}}
+  // pace per control (bullet/blitz would otherwise drag the average down)
+  const pace={};
+  for(const ctl of ['rapid','blitz','bullet','daily']){
+    const aa=gs.filter(g=>g.c===ctl).map(g=>g.amt).filter(v=>v!=null);
+    pace[ctl]=aa.length?aa.reduce((a,b)=>a+b,0)/aa.length:null;
+  }
+  const aaAll=gs.map(g=>g.amt).filter(v=>v!=null);
+  pace.all=aaAll.length?aaAll.reduce((a,b)=>a+b,0)/aaAll.length:null;
+  const lb={};for(const g of gs){(lb[g.s]||(lb[g.s]=[])).push(g.m||0);}
+  const avgLen={};for(const k of Object.keys(lb))avgLen[k]=+(lb[k].reduce((a,b)=>a+b,0)/lb[k].length).toFixed(1);
+  return{total:t,endings:e,resign,tilt,ratingDiff,tod,dayType,rep,pace,avgLenByResult:avgLen};
+}
+function escHtml(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function ratingChartSvg(games){
+  const ctrls=[['rapid','#D4A853'],['blitz','#7fa8c9'],['bullet','#9a8fb5']];
+  const series={};
+  let mn=Infinity,mx=-Infinity,first='',last='';
+  for(const[c]of ctrls){
+    const pts=[];
+    for(const g of games){
+      if(g.c!==c||g.r==null)continue;
+      if(!first||g.d<first)first=g.d;
+      if(!last||g.d>last)last=g.d;
+      mn=Math.min(mn,g.r);mx=Math.max(mx,g.r);
+      pts.push({d:g.d,v:g.r});
+    }
+    series[c]=pts;
+  }
+  if(!isFinite(mn))return '<div class="trendempty">No rating data.</div>';
+  const pad=Math.max(15,(mx-mn)*0.12);mn-=pad;mx+=pad;
+  const W=620,H=230,pl=44,pr=10,pt=12,pb=26;
+  const t0=new Date(first+'T00:00:00').getTime(),t1=new Date(last+'T00:00:00').getTime(),span=Math.max(1,t1-t0);
+  const X=d=>pl+(new Date(d+'T00:00:00').getTime()-t0)/span*(W-pl-pr);
+  const Y=v=>pt+(1-(v-mn)/(mx-mn))*(H-pt-pb);
+  let svg='<svg class="rchart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Rating over time">';
+  for(let i=0;i<=4;i++){
+    const v=mn+(mx-mn)*i/4,y=Y(v);
+    svg+='<line x1="'+pl+'" y1="'+y+'" x2="'+(W-pr)+'" y2="'+y+'" stroke="#3a2f28" stroke-width="1"/><text x="'+(pl-5)+'" y="'+(y+4)+'" fill="#9A8070" font-size="10" text-anchor="end">'+Math.round(v)+'</text>';
+  }
+  svg+='<text x="'+pl+'" y="'+(H-8)+'" fill="#9A8070" font-size="10">'+escHtml(first)+'</text><text x="'+(W-pr)+'" y="'+(H-8)+'" fill="#9A8070" font-size="10" text-anchor="end">'+escHtml(last)+'</text>';
+  for(const[c,col]of ctrls){
+    const pts=series[c];
+    if(pts.length<2)continue;
+    svg+='<polyline fill="none" stroke="'+col+'" stroke-width="2" points="'+pts.map(p=>X(p.d).toFixed(1)+','+Y(p.v).toFixed(1)).join(' ')+'"/>';
+    const lp=pts[pts.length-1];
+    svg+='<circle cx="'+X(lp.d)+'" cy="'+Y(lp.v)+'" r="3.5" fill="'+col+'"/><text x="'+(X(lp.d)-7)+'" y="'+(Y(lp.v)-8)+'" fill="'+col+'" font-size="11" text-anchor="end" font-weight="600">'+lp.v+'</text>';
+  }
+  svg+='</svg>';
+  const legend=ctrls.filter(([c])=>series[c].length>1).map(([c,col])=>'<span><i style="background:'+col+'"></i>'+c+'</span>').join('');
+  return svg+'<div class="rlegend">'+legend+'</div>';
+}
+function renderStats(){
+  const body=document.getElementById('statsbody'),focus=document.getElementById('focusweek');
+  if(!body)return;
+  const data=statsData();
+  if(!data){
+    body.innerHTML='<div class="trendempty">No game data bundled. Use Sync to pull your games from chess.com.</div>';
+    if(focus)focus.innerHTML='';
+    return;
+  }
+  const games=data.games.slice().sort((a,b)=>a.d<b.d?-1:1);
+  const agg=aggStats(games),t=agg.total;
+  let html='';
+  // (a) rating chart
+  html+='<div class="statsec">Rating over time</div>'+ratingChartSvg(games);
+  // (b) monthly W/L/D bars
+  html+='<div class="statsec">Results by month</div>';
+  for(const m of agg.months){
+    const tot=m.games||1;
+    html+='<div class="mbar"><span class="mlbl">'+escHtml(m.label)+'</span><span class="mtrack"><span class="mw" style="width:'+(m.w/tot*100)+'%"></span><span class="md" style="width:'+(m.d/tot*100)+'%"></span><span class="ml" style="width:'+(m.l/tot*100)+'%"></span></span><span class="mval">'+m.w+'W '+m.l+'L '+m.d+'D</span></div>';
+  }
+  // per-control totals
+  const ctlOrder=['rapid','blitz','bullet','daily'];
+  for(const c of ctlOrder){
+    const cc=agg.controls[c];if(!cc)continue;
+    html+='<div class="mbar"><span class="mlbl">'+c+'</span><span class="mtrack"><span class="mw" style="width:'+(cc.w/cc.games*100)+'%"></span><span class="md" style="width:'+(cc.d/cc.games*100)+'%"></span><span class="ml" style="width:'+(cc.l/cc.games*100)+'%"></span></span><span class="mval">'+statsScore(cc.w,cc.l,cc.d).toFixed(0)+'% · '+cc.games+'g</span></div>';
+  }
+  // (c) openings table
+  html+='<div class="statsec">Openings (3+ games)</div><table class="opentable"><tr><th>Opening</th><th class="num">Games</th><th class="num">Score</th><th class="num">W-L-D</th></tr>';
+  for(const o of agg.openings.slice(0,12)){
+    const s=statsScore(o.w,o.l,o.d);
+    const cls=s>=55?'scoregood':s>=45?'scoreavg':'scorebad';
+    html+='<tr><td>'+escHtml(o.name)+'</td><td class="num">'+o.games+'</td><td class="num '+cls+'">'+s.toFixed(0)+'%</td><td class="num">'+o.w+'-'+o.l+'-'+o.d+'</td></tr>';
+  }
+  html+='</table>';
+  // (d) color split + how games end
+  html+='<div class="statsec">By color</div>';
+  const bw=agg.byColor.white,bb=agg.byColor.black;
+  html+='<div class="mbar"><span class="mlbl">White</span><span class="mtrack"><span class="mw" style="width:'+(bw.w/(bw.w+bw.l+bw.d||1)*100)+'%"></span></span><span class="mval">'+statsScore(bw.w,bw.l,bw.d).toFixed(0)+'%</span></div>';
+  html+='<div class="mbar"><span class="mlbl">Black</span><span class="mtrack"><span class="mw" style="width:'+(bb.w/(bb.w+bb.l+bb.d||1)*100)+'%"></span></span><span class="mval">'+statsScore(bb.w,bb.l,bb.d).toFixed(0)+'%</span></div>';
+  html+='<div class="statsec">How games ended</div>';
+  const e=agg.endings;
+  const erows=[['Checkmated them',e.checkmateWin],['You got mated',e.checkmateLoss],['They resigned',e.resignWin],['You resigned',e.resignLoss],['Won on time',e.timeoutWin],['Lost on time',e.timeoutLoss],['Draws',e.draw]];
+  const emax=Math.max(1,...erows.map(r=>r[1]));
+  for(const[lbl,v]of erows){
+    html+='<div class="ebar"><span class="elbl">'+lbl+'</span><span class="etrack"><span class="efill" style="display:block;width:'+(v/emax*100)+'%"></span></span><span class="eval">'+v+'</span></div>';
+  }
+  // (d2) the honest mate stat — resignation gap
+  const deep=aggDeep(games),eng=data.engine;
+  const rg=deep.resign;
+  html+='<div class="statsec">The honest mate stat</div><div class="honestbox">';
+  html+='<div class="honestbig">You resign <b>'+rg.myResignRate.toFixed(0)+'%</b> of your losses — your opponents resign <b>'+rg.oppResignRate.toFixed(0)+'%</b> of theirs.</div>';
+  html+='<div class="honestsub">That one habit explains the scary number: '+rg.mateLossShare.toFixed(0)+'% of your losses end in checkmate, but only '+rg.mateWinShare.toFixed(0)+'% of your wins do — because opponents quit before mate. You play dead positions out; they don\u2019t.</div>';
+  if(eng&&eng.mateLosses&&eng.mateLosses.avgDeadLostMoves!=null)
+    html+='<div class="honestsub">Engine check ('+eng.mateLosses.n+' recent losses, depth '+eng.depth+'): you played <b>'+eng.mateLosses.avgDeadLostMoves+' moves</b> on average after the position was dead lost (−5.0). In '+eng.resignWins.n+' wins, opponents played <b>'+eng.resignWins.avgDeadLostMoves+' moves</b> after dead lost before resigning.</div>';
+  html+='<div class="honesttake">🎯 Resigning a dead position isn\u2019t quitting — it\u2019s banking time and energy for the next game.</div></div>';
+  // (d3) tilt & session fatigue
+  const tl=deep.tilt;
+  html+='<div class="statsec">Tilt &amp; session fatigue</div>';
+  const pctRow=(lbl,v,n)=>{const w=v==null?0:Math.max(0,Math.min(100,v));
+    return '<div class="ebar"><span class="elbl">'+lbl+'</span><span class="etrack"><span class="efill" style="display:block;width:'+w+'%"></span></span><span class="eval">'+(v==null?'—':v.toFixed(0)+'%')+'</span></div>'+
+    (n!=null?'<div class="esub">'+n+' games</div>':'');};
+  html+=pctRow('Win% baseline',tl.baseline,t.games);
+  html+=pctRow('Win% right after a loss',tl.afterLoss.winPct,tl.afterLoss.n);
+  html+=pctRow('Win% after 2+ straight losses',tl.after2Losses.winPct,tl.after2Losses.n);
+  html+=pctRow('Session game 1',tl.sessPos['1'].winPct,tl.sessPos['1'].n);
+  html+=pctRow('Session game 2',tl.sessPos['2'].winPct,tl.sessPos['2'].n);
+  html+=pctRow('Session game 3+',tl.sessPos['3+'].winPct,tl.sessPos['3+'].n);
+  html+='<div class="esub">Longest streaks: '+tl.maxWinStreak+' wins · '+tl.maxLossStreak+' losses.</div>';
+  // (d4) score vs rating difference
+  if(deep.ratingDiff.length){
+    html+='<div class="statsec">Score vs rating difference</div>';
+    for(const b of deep.ratingDiff){
+      html+='<div class="pairrow"><span class="elbl">You '+b.bucket+'</span><span class="ptrack"><span class="pfill act" style="width:'+Math.min(100,b.actual)+'%"></span></span><span class="pval">'+b.actual.toFixed(0)+'%</span></div>';
+      html+='<div class="pairrow exp"><span class="elbl">expected</span><span class="ptrack"><span class="pfill" style="width:'+Math.min(100,b.expected)+'%"></span></span><span class="pval">'+b.expected.toFixed(0)+'% · '+b.games+'g</span></div>';
+    }
+    html+='<div class="esub">Expected score from the Elo formula for your average rating gap in each bucket.</div>';
+  }
+  // (d5) when you play
+  html+='<div class="statsec">When you play (Pacific)</div>';
+  for(const h of deep.tod)html+=pctRow(h.label,h.winPct,h.games);
+  html+=pctRow('Weekday',deep.dayType.weekday.winPct,deep.dayType.weekday.games);
+  html+=pctRow('Weekend',deep.dayType.weekend.winPct,deep.dayType.weekend.games);
+  // (d6) repertoire adherence
+  const rp=deep.rep;
+  html+='<div class="statsec">Do you play your repertoire?</div>';
+  if(rp.vsD4.total)html+='<div class="ebar"><span class="elbl">Vs 1.d4: 1...d5</span><span class="etrack"><span class="efill" style="display:block;width:'+(rp.vsD4.d5/rp.vsD4.total*100)+'%"></span></span><span class="eval">'+(rp.vsD4.d5/rp.vsD4.total*100).toFixed(0)+'%</span></div><div class="esub">'+rp.vsD4.total+' games · 1...Nf6 '+(rp.vsD4.Nf6/rp.vsD4.total*100).toFixed(0)+'% · other '+(rp.vsD4.other/rp.vsD4.total*100).toFixed(0)+'%</div>';
+  if(rp.vsE4.total)html+='<div class="ebar"><span class="elbl">Vs 1.e4: Caro (1...c6)</span><span class="etrack"><span class="efill" style="display:block;width:'+(rp.vsE4.c6/rp.vsE4.total*100)+'%"></span></span><span class="eval">'+(rp.vsE4.c6/rp.vsE4.total*100).toFixed(0)+'%</span></div><div class="esub">'+rp.vsE4.total+' games</div>';
+  if(rp.asWhite.total)html+='<div class="ebar"><span class="elbl">As White: 1.e4 / 1.c4</span><span class="etrack"><span class="efill" style="display:block;width:'+(rp.asWhite.e4/rp.asWhite.total*100)+'%"></span></span><span class="eval">'+(rp.asWhite.e4/rp.asWhite.total*100).toFixed(0)+'% / '+(rp.asWhite.c4/rp.asWhite.total*100).toFixed(0)+'%</span></div><div class="esub">'+rp.asWhite.total+' games</div>';
+  // (d7) thrown wins & comebacks
+  if(eng){
+    html+='<div class="statsec">Thrown &amp; stolen</div>';
+    html+='<div class="ebar"><span class="elbl">Thrown wins (was +3, lost)</span><span class="etrack"><span class="efill bad" style="display:block;width:'+(eng.thrownWins/eng.mateLosses.n*100)+'%"></span></span><span class="eval">'+eng.thrownWins+'/'+eng.mateLosses.n+'</span></div>';
+    html+='<div class="ebar"><span class="elbl">Comebacks (was −3, won)</span><span class="etrack"><span class="efill" style="display:block;width:'+(eng.comebacks/eng.resignWins.n*100)+'%"></span></span><span class="eval">'+eng.comebacks+'/'+eng.resignWins.n+'</span></div>';
+    html+='<div class="esub">From '+eng.mateLosses.n+' sampled losses and '+eng.resignWins.n+' sampled wins (engine depth '+eng.depth+').</div>';
+  }
+  // (e) key insights
+  html+='<div class="statsec">Key insights</div><ul class="insightlist">';
+  for(const s of buildInsights(agg,games,deep,eng))html+='<li>'+escHtml(s)+'</li>';
+  html+='</ul>';
+  const gen=data.generated?(' · data from '+escHtml(data.generated)+(data.synced?' (synced)':'')):'';
+  html+='<div style="font-size:.65rem;color:var(--muted);margin-top:8px">'+t.games+' games'+gen+'</div>';
+  body.innerHTML=html;
+  // focus of the week
+  const f=focusOfWeek(agg,deep,eng);
+  if(focus)focus.innerHTML=f?('<div class="focusbox"><div class="flbl">Focus of the week</div><b>'+escHtml(f.title)+'</b><div style="font-size:.78rem;margin-top:4px">'+escHtml(f.body)+'</div><div class="fdrill">🎯 '+escHtml(f.drill)+'</div></div>'):'';
+  const note=document.getElementById('statssyncnote');
+  if(note)note.classList.add('hidden');
+}
+function ecoNameFromUrl(url){
+  if(!url)return'Unknown';
+  const base=String(url).split('/').pop()||'';
+  const parts=base.split('-').filter(p=>p&&!/^[0-9]/.test(p)&&p.indexOf('.')<0);
+  return parts.join(' ')||'Unknown';
+}
+function syncGameRecord(g){
+  try{
+    const pgn=g.pgn||'';
+    const tag=n=>{const m=pgn.match(new RegExp('\\['+n+'\\s+"([^"]*)"\\]'));return m?m[1]:'';};
+    const white=tag('White'),black=tag('Black');
+    if(!white||!black)return null;
+    const meW=white.toLowerCase()==='rvt8';
+    const me=meW?g.white:g.black,opp=meW?g.black:g.white;
+    const meRes=String(me.result||'').toLowerCase(),oppRes=String(opp.result||'').toLowerCase();
+    const draws={'agreed':1,'repetition':1,'stalemate':1,'insufficient':1,'50move':1,'timevsinsufficient':1};
+    let s,t;
+    if(meRes==='win'){s='w';t=oppRes==='checkmated'?'checkmate':(oppRes==='timeout'||oppRes==='timeforfeit')?'timeout':'resign';}
+    else if(draws[meRes]){s='d';t='draw';}
+    else{s='l';t=meRes==='checkmated'?'checkmate':(meRes==='timeout'||meRes==='timeforfeit')?'timeout':'resign';}
+    let c=String(g.time_class||'').toLowerCase();
+    if(!['rapid','blitz','bullet','daily'].includes(c)){
+      const base=String(g.time_control||'').split('+')[0];
+      c={'600':'rapid','300':'blitz','180':'blitz','120':'bullet','60':'bullet'}[base]||'rapid';
+    }
+    const dt=(tag('UTCDate')||tag('Date')||'').replace(/\./g,'-').slice(0,10);
+    const mm=pgn.match(/\b\d+\.\s/g);
+    // enriched fields (mirror gen_stats.py): LA hour/weekday, rating diff, first moves, end time
+    let hod=null,wd=null;
+    try{
+      const iso=(tag('UTCDate')||tag('Date')||'').replace(/\./g,'-')+'T'+(tag('UTCTime')||tag('StartTime')||'00:00:00')+'Z';
+      const dd=new Date(iso);
+      if(!isNaN(dd)){
+        const fmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/Los_Angeles',hour:'numeric',hour12:false});
+        const parts=fmt.formatToParts(dd);const hh=parts.find(p=>p.type==='hour');
+        hod=hh?parseInt(hh.value,10)%24:null;
+        const wfmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/Los_Angeles',weekday:'short'});
+        wd={'Sun':0,'Mon':1,'Tue':2,'Wed':3,'Thu':4,'Fri':5,'Sat':6}[wfmt.format(dd)];
+      }
+    }catch(err){}
+    const meR=typeof me.rating==='number'?me.rating:null,opR=typeof opp.rating==='number'?opp.rating:null;
+    let fm=[];
+    try{
+      const mt=pgn.split(/\n\s*\n/).slice(1).join(' ').replace(/\{[^}]*\}/g,' ').replace(/\d+\.\.\./g,' ').replace(/\b\d+\./g,' ').trim().split(/\s+/).filter(t=>t&&!/^(1-0|0-1|1\/2-1\/2|\*)$/.test(t));
+      fm=mt.slice(0,4);
+    }catch(err){}
+    return{d:dt,c,r:meR,s,col:meW?'w':'b',
+      o:ecoNameFromUrl(tag('ECOUrl')),t,m:mm?mm.length:0,u:g.url||'',opp:meW?black:white,
+      hod,wd,rd:(meR!=null&&opR!=null)?meR-opR:null,
+      et:(typeof g.end_time==='number'?g.end_time:null),fm,amt:null};
+  }catch(err){return null;}
+}
+function syncStats(){
+  const note=document.getElementById('statssyncnote'),btn=document.getElementById('syncbtn');
+  if(!note)return;
+  note.classList.remove('hidden');
+  note.innerHTML='Syncing from chess.com…';
+  if(btn)btn.disabled=true;
+  const done=(msg,isErr)=>{
+    note.innerHTML=msg;
+    if(btn)btn.disabled=false;
+    if(!isErr)setTimeout(()=>note.classList.add('hidden'),4000);
+  };
+  fetch('https://api.chess.com/pub/player/rvt8/games/archives')
+    .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
+    .then(async data=>{
+      const urls=data.archives||[];
+      if(!urls.length)throw new Error('no archives');
+      const base=bundledStats();
+      const genMonth=base&&base.generated?base.generated.slice(0,7):'0000-00';
+      // Re-fetch the newest bundled month (games may have been added since)
+      // plus anything newer.
+      const targets=urls.filter(u=>{const m=u.slice(-7);return m>=genMonth;});
+      const have={};
+      if(base)for(const g of base.games)if(g.u)have[g.u]=1;
+      let added=0;
+      const merged=base?base.games.slice():[];
+      for(const u of targets){
+        const r=await fetch(u);
+        if(!r.ok)continue;
+        const j=await r.json();
+        for(const g of (j.games||[])){
+          const rec=syncGameRecord(g);
+          if(!rec||!rec.u||have[rec.u])continue;
+          have[rec.u]=1;merged.push(rec);added++;
+        }
+      }
+      merged.sort((a,b)=>a.d<b.d?-1:1);
+      const stats={generated:base?base.generated:'',synced:new Date().toISOString().slice(0,10),games:merged};
+      try{localStorage.setItem(STATS_CACHE_KEY,JSON.stringify({savedAt:Date.now(),stats}));}catch(err){}
+      renderStats();
+      done(added?('Synced: '+added+' new game'+(added===1?'':'s')+' added.'):'Already up to date — no new games found.');
+    })
+    .catch(err=>{
+      console.warn('stats sync failed',err);
+      done('Couldn’t reach chess.com — showing bundled data. Check your connection and try again.',true);
+    });
+}
+
+// ─── PUZZLES TAB (MY BLUNDERS) ────────────────────────────────────────────────
+const PUZZLE_KEY='chesstool_puzzle_progress';
+const PUZZLE_DAILY_TARGET=10;
+let PUZZLE=null;          // active puzzle state
+let PUZZLE_QUEUE=[];      // ordered puzzle ids
+let PUZZLE_INDEX=0;
+function puzzleList(){return (typeof MY_PUZZLES!=='undefined'&&Array.isArray(MY_PUZZLES))?MY_PUZZLES:[];}
+function puzzleProgGet(){
+  let p={};
+  try{p=JSON.parse(localStorage.getItem(PUZZLE_KEY))||{};}catch(e){p={};}
+  p.attempts=p.attempts||0;p.solved=p.solved||{};p.streak=p.streak||0;
+  p.day=p.day||{date:'',count:0};
+  return p;
+}
+function puzzleProgSave(p){try{localStorage.setItem(PUZZLE_KEY,JSON.stringify(p));}catch(e){}}
+function puzzleTodayStr(){return new Date().toISOString().slice(0,10);}
+function buildPuzzleQueue(){
+  const list=puzzleList(),prog=puzzleProgGet();
+  const items=list.map(p=>{
+    const s=prog.solved[p.id]||{};
+    return{id:p.id,solved:!!s.s,fails:s.f||0,last:s.last||0};
+  });
+  // Spaced repetition: unsolved first, most-failed first, least-recent first.
+  items.sort((a,b)=>{
+    if(a.solved!==b.solved)return a.solved?1:-1;
+    if(b.fails!==a.fails)return b.fails-a.fails;
+    return a.last-b.last;
+  });
+  PUZZLE_QUEUE=items.map(x=>x.id);
+  if(PUZZLE_INDEX>=PUZZLE_QUEUE.length)PUZZLE_INDEX=0;
+}
+function updatePuzzleCard(){
+  const list=puzzleList(),prog=puzzleProgGet();
+  const solved=list.filter(p=>{const s=prog.solved[p.id];return s&&s.s;}).length;
+  const today=prog.day.date===puzzleTodayStr()?prog.day.count:0;
+  const c=document.getElementById('pzcount');
+  if(c)c.textContent=list.length?((PUZZLE_INDEX+1)+' / '+list.length):'0 puzzles';
+  const sc=document.getElementById('pzscore');
+  if(sc)sc.textContent=solved+' solved · '+prog.attempts+' attempts';
+  const mt=document.getElementById('pzmeta');
+  if(mt)mt.textContent='streak '+prog.streak+' · today '+today+'/'+PUZZLE_DAILY_TARGET;
+}
+function startPuzzleSession(){
+  buildPuzzleQueue();
+  if(!PUZZLE_QUEUE.length){
+    PUZZLE=null;
+    setStat('No puzzles bundled yet.','info');
+    setCoach('Puzzle data is missing.');
+    updatePuzzleCard();
+    return;
+  }
+  startPuzzle(PUZZLE_QUEUE[PUZZLE_INDEX]||PUZZLE_QUEUE[0]);
+}
+function startPuzzle(id){
+  const item=puzzleList().find(p=>p.id===id);
+  if(!item){setStat('Puzzle not found.','bad');return;}
+  PUZZLE={item,fen:item.fen,bestUci:null,bestSan:'',bestEval:null,playedSan:item.playedSan||'',validating:true,checking:false,attempts:0};
+  FEN=item.fen;HIST=[item.fen];SANS=[];SEL=null;LDOTS=[];LF=null;LT=null;
+  FLIPPED=item.side==='b'; // show from rvt8's perspective
+  BOT_ACTIVE=false;PRACTICE_LOCK=true;
+  refreshPanel();drawBoard();drawMoveList();
+  const pr=document.getElementById('pzprompt');
+  if(pr)pr.innerHTML='vs <b>'+escHtml(item.opp)+'</b> · '+escHtml(item.date)+' · '+escHtml(item.opening)+'<br>You played <b>'+escHtml(item.playedSan)+'</b>?? — find the improvement.';
+  const prompt='Puzzle: you played '+item.playedSan+' — find the improvement. Freshly verifying with Stockfish…';
+  setStat(prompt,'info');setCoach(prompt);
+  const nx=document.getElementById('pznext');if(nx)nx.classList.add('hidden');
+  updatePuzzleCard();
+  document.getElementById('board')?.scrollIntoView({behavior:'smooth',block:'center'});
+  sfAnalyzePositionFresh(item.fen,15,res=>{
+    if(!PUZZLE||PUZZLE.item.id!==id||MODE!=='puzzles')return;
+    PUZZLE.validating=false;PRACTICE_LOCK=false;
+    if(!res){
+      const msg='Fresh verification was unavailable. The puzzle is paused rather than trusting the cached answer.';
+      setStat(msg,'bad');setCoach(msg);PUZZLE.checking=true;return;
+    }
+    const ev=infoWhiteEval(item.fen,res.info);
+    evaluationPerspectiveSanity(item.fen,res.info,ev);
+    PUZZLE.bestUci=res.best;PUZZLE.bestSan=uci2san(item.fen,res.best)||'';PUZZLE.bestEval=ev;
+    const msg='Puzzle verified. Find the improvement over '+item.playedSan+'.';
+    setStat(msg,'info');setCoach(msg);
+  });
+}
+function nextPuzzle(){
+  if(!PUZZLE_QUEUE.length)return startPuzzleSession();
+  PUZZLE_INDEX=(PUZZLE_INDEX+1)%PUZZLE_QUEUE.length;
+  startPuzzle(PUZZLE_QUEUE[PUZZLE_INDEX]);
+}
+function resetPuzzlePosition(r){
+  if(!PUZZLE||PUZZLE!==r)return;
+  FEN=r.fen;HIST=[r.fen];SANS=[];SEL=null;LDOTS=[];LF=null;LT=null;
+  r.checking=false;PRACTICE_LOCK=false;
+  refreshPanel();drawBoard();drawMoveList();
+}
+function puzzleClick(rank,file){
+  const r=PUZZLE;if(!r||r.validating||r.checking)return;
+  const {bd,turn}=parseFen(FEN),p=GP(bd,rank,file);
+  if(SEL){
+    const hit=LDOTS.find(d=>d.r===rank&&d.f===file);
+    if(hit){handlePuzzleMove(hit.uci);return;}
+    if(p&&friendly(p,turn)){SEL={r:rank,f:file};LDOTS=getLegalDots(rank,file);drawBoard();return;}
+    SEL=null;LDOTS=[];drawBoard();return;
+  }
+  if(p&&friendly(p,turn)){SEL={r:rank,f:file};LDOTS=getLegalDots(rank,file);drawBoard();}
+}
+function handlePuzzleMove(uci){
+  const r=PUZZLE;if(!r||r.validating||r.checking||MODE!=='puzzles')return;
+  const originalFen=r.fen,mover=parseFen(originalFen).turn,san=uci2san(originalFen,uci);
+  if(!san)return;
+  const prog=puzzleProgGet();
+  prog.attempts++;r.attempts++;
+  r.checking=true;PRACTICE_LOCK=true;
+  setLastUci(uci);
+  const afterFen=applyUci(originalFen,uci);
+  FEN=afterFen;HIST=[originalFen,afterFen];SANS=[san];SEL=null;LDOTS=[];drawBoard();drawMoveList();
+  setStat('Verifying '+san+' from the original position…','info');
+  updatePuzzleCard();
+  // Never trust the cached answer: fresh Stockfish analysis of both the
+  // puzzle position and the played move, then accept near-equivalents.
+  sfAnalyzePlayedMoveFresh(originalFen,uci,15,candidateRes=>{
+    if(!PUZZLE||PUZZLE!==r)return;
+    if(!candidateRes){
+      const msg='Could not verify '+san+'. The puzzle will not mark it correct without a fresh engine result.';
+      setStat(msg,'bad');setCoach(msg);resetPuzzlePosition(r);return;
+    }
+    const candidateEval=infoWhiteEval(originalFen,candidateRes.info);
+    evaluationPerspectiveSanity(originalFen,candidateRes.info,candidateEval);
+    const loss=replayEvalLoss(r.bestEval,candidateEval,mover);
+    const exactBest=uci===r.bestUci;
+    const nearBest=loss!=null&&loss<=0.35; // <= ~0.35 pawns from the fresh best
+    const accepted=exactBest||nearBest;
+    sfAnalyzePositionFresh(afterFen,14,replyRes=>{
+      if(!PUZZLE||PUZZLE!==r)return;
+      let reply='',afterEval=null;
+      if(replyRes){
+        reply=replayReplyDescription(afterFen,replyRes.best);
+        afterEval=infoWhiteEval(afterFen,replyRes.info);
+      }
+      const evalPart=afterEval?' Resulting eval: '+evalText(afterEval)+'.':'';
+      const replyPart=reply?' Opponent’s strongest reply: '+reply+'.':'';
+      const tries=r.attempts>1?' after '+r.attempts+' tries':'';
+      const today=puzzleTodayStr();
+      if(prog.day.date!==today){prog.day={date:today,count:0};}
+      if(accepted){
+        const quality=exactBest?'the fresh engine best move':'an engine-equivalent improvement';
+        const msg='✓ Verified — '+san+' is '+quality+tries+'.'+evalPart+replyPart;
+        setStat(msg,'ok');setCoach(msg+' Nice — this is exactly the kind of position you used to get wrong.');
+        const prev=prog.solved[r.item.id]||{};
+        prog.solved[r.item.id]={s:true,f:prev.f||0,last:Date.now()};
+        prog.streak++;prog.day.count++;
+        puzzleProgSave(prog);
+        const nx=document.getElementById('pznext');if(nx)nx.classList.remove('hidden');
+        updatePuzzleCard();
+        r.checking=true;PRACTICE_LOCK=true; // keep the solved position visible
+        return;
+      }
+      const prev=prog.solved[r.item.id]||{};
+      prog.solved[r.item.id]={s:false,f:(prev.f||0)+1,last:Date.now()};
+      prog.streak=0;
+      puzzleProgSave(prog);
+      const bestText=r.bestSan?' The improvement was '+r.bestSan+'.':'';
+      const lossText=loss!=null&&loss<90?' Your move is about '+loss.toFixed(2)+' pawns worse than the fresh best.':'';
+      const msg='Not quite — '+san+' did not pass fresh verification.'+bestText+lossText+evalPart+replyPart+' This puzzle will come back sooner. Try again.';
+      setStat(msg,'bad');setCoach(msg);
+      updatePuzzleCard();
+      setTimeout(()=>resetPuzzlePosition(r),1700);
+    });
+  });
+}
+
+console.info('ChessTool V2.29 loaded: Slav repertoire + game stats + real-game blunder puzzles');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
@@ -2346,4 +2998,4 @@ renderMistakeTrends();
 drawBoard();
 refreshPanel();
 drawMoveList();
-setStat('TRAIN: choose lines and press Start Session.','info');setCoach('Choose English only, Caro-Kann only, or All, then Start Session.');
+setStat('TRAIN: choose lines and press Start Session.','info');setCoach('Choose English only, Caro-Kann + Slav, or All, then Start Session.');
