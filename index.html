@@ -3,17 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChessTool V2.27</title>
+<title>ChessTool V2.29</title>
 <link rel="stylesheet" href="styles.css">
 
 </head>
 <body>
 <header>
-  <div class="logo">♟ ChessTool <small>1.e4 / Italian · Caro-Kann · V2.27</small></div>
+  <div class="logo">♟ ChessTool <small>1.e4 / Italian · Caro-Kann · Slav · V2.29</small></div>
   <nav>
     <button class="nb on" onclick="setMode('drill')">Train</button>
     <button class="nb" onclick="setMode('mistakes')">Mistake Drill</button>
     <button class="nb" onclick="setMode('bot')">vs Bot</button>
+    <button class="nb" onclick="setMode('stats')">Stats</button>
+    <button class="nb" onclick="setMode('puzzles')">Puzzles</button>
   </nav>
 </header>
 <div class="app">
@@ -75,7 +77,7 @@
       <div class="cb2">
         <div class="familyquick">
           <button class="skb" onclick="selectLineFamily('white')">1.e4 / Italian only</button>
-          <button class="skb" onclick="selectLineFamily('black')">Caro-Kann only</button>
+          <button class="skb" onclick="selectLineFamily('black')">Caro-Kann + Slav only</button>
           <button class="skb" onclick="selectLineFamily('all')">All</button>
         </div>
         <div id="linesel"></div>
@@ -157,6 +159,28 @@
         </div>
       </div>
     </div>
+    <!-- stats -->
+    <div class="card hidden" id="statscard">
+      <div class="ch"><span>My Stats</span><button class="mini" id="syncbtn" onclick="syncStats()">↻ Sync from chess.com</button></div>
+      <div class="cb2">
+        <div id="statssyncnote" class="trendempty hidden"></div>
+        <div id="focusweek"></div>
+        <div id="statsbody"><div class="trendempty">Loading stats…</div></div>
+      </div>
+    </div>
+    <!-- puzzles: real-game blunders -->
+    <div class="card hidden" id="puzzlecard">
+      <div class="ch"><span>My Blunders · Puzzles</span><span id="pzcount" style="color:var(--acc);font-size:.8rem"></span></div>
+      <div class="cb2">
+        <div class="mistakedrillintro">Positions from <b>your own chess.com games</b> — moments where you actually blundered. This is different from Mistake Drill, which uses mistakes from your in-app bot games. You are told what you played; find the improvement.</div>
+        <div class="mistakedrillstats"><b id="pzscore">0 solved · 0 attempts</b><span id="pzmeta">today 0/10</span></div>
+        <div id="pzprompt" style="font-size:.82rem;margin:8px 0;color:var(--txt)"></div>
+        <div class="mistakedrillactions">
+          <button class="cb hidden" id="pznext" onclick="nextPuzzle()">Next Puzzle →</button>
+          <button class="cb" id="pzskip" onclick="nextPuzzle()">Skip →</button>
+        </div>
+      </div>
+    </div>
     <!-- review -->
     <div class="card hidden" id="revcard">
       <div class="ch"><span>Game Review</span><span id="reviewengine">Engine analysis</span></div>
@@ -196,6 +220,9 @@
 </div>
 <script src="js/core.js"></script>
 <script src="data/repertoire.js"></script>
+<script src="data/slav.js"></script>
+<script src="data/mygames.js"></script>
+<script src="data/puzzles.js"></script>
 <script src="data/plans.js"></script>
 <script src="js/app.js"></script>
 </body>
