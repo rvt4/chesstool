@@ -2873,6 +2873,15 @@ function startPuzzleSession(){
   }
   startPuzzle(PUZZLE_QUEUE[PUZZLE_INDEX]||PUZZLE_QUEUE[0]);
 }
+function puzzleSwingHtml(item){
+  if(!item||!isFinite(item.evalBefore)||!isFinite(item.evalAfter))return'';
+  const f=v=>Math.abs(v)>=99?'mate':(v>=0?'+':'')+v.toFixed(1);
+  const b='<b>'+f(item.evalBefore)+'</b>',a='<b>'+f(item.evalAfter)+'</b>';
+  if(item.swingType==='won-to-lost')return' — you went from '+b+' to '+a+' in one move. Find the move that kept your advantage';
+  if(item.swingType==='won-to-even')return' — you went from '+b+' to '+a+', throwing most of your edge. Find the move that kept the win in hand';
+  if(item.swingType==='even-to-lost')return' — you were level at '+b+' and fell to '+a+'. Find the move that held the balance';
+  return' — you went from '+b+' to '+a;
+}
 function startPuzzle(id){
   const item=puzzleList().find(p=>p.id===id);
   if(!item){setStat('Puzzle not found.','bad');return;}
@@ -2882,7 +2891,7 @@ function startPuzzle(id){
   BOT_ACTIVE=false;PRACTICE_LOCK=true;
   refreshPanel();drawBoard();drawMoveList();
   const pr=document.getElementById('pzprompt');
-  if(pr)pr.innerHTML='vs <b>'+escHtml(item.opp)+'</b> · '+escHtml(item.date)+' · '+escHtml(item.opening)+'<br>You played <b>'+escHtml(item.playedSan)+'</b>?? — find the improvement.';
+  if(pr)pr.innerHTML='vs <b>'+escHtml(item.opp)+'</b> · '+escHtml(item.date)+' · '+escHtml(item.opening)+'<br>You played <b>'+escHtml(item.playedSan)+'</b>??'+puzzleSwingHtml(item)+' — find the improvement.';
   const prompt='Puzzle: you played '+item.playedSan+' — find the improvement. Freshly verifying with Stockfish…';
   setStat(prompt,'info');setCoach(prompt);
   const nx=document.getElementById('pznext');if(nx)nx.classList.add('hidden');
@@ -2989,7 +2998,7 @@ function handlePuzzleMove(uci){
   });
 }
 
-console.info('ChessTool V2.29 loaded: Slav repertoire + game stats + real-game blunder puzzles');
+console.info('ChessTool V2.30 loaded: inflection-point blunder puzzles');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
