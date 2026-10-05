@@ -2613,86 +2613,135 @@ function ratingChartSvg(games){
   const legend=ctrls.filter(([c])=>series[c].length>1).map(([c,col])=>'<span><i style="background:'+col+'"></i>'+c+'</span>').join('');
   return svg+'<div class="rlegend">'+legend+'</div>';
 }
-function statTrend(games,control='rapid',n=20){
-  const a=games.filter(g=>g.c===control&&g.r!=null).slice(-n);
-  if(a.length<2)return null;
-  const first=a[0].r,last=a[a.length-1].r;
-  return{first,last,delta:last-first,games:a.length};
-}
-function recentForm(games,n=20){
-  const a=games.slice(-n),w=a.filter(g=>g.s==='w').length,l=a.filter(g=>g.s==='l').length,d=a.length-w-l;
-  return{games:a.length,w,l,d,score:statsScore(w,l,d)};
-}
-function statCard(label,value,sub,cls=''){
-  return '<div class="statcard '+cls+'"><div class="statcardlabel">'+escHtml(label)+'</div><div class="statcardvalue">'+value+'</div><div class="statcardsub">'+escHtml(sub||'')+'</div></div>';
-}
 function renderStats(){
   const body=document.getElementById('statsbody'),focus=document.getElementById('focusweek');
   if(!body)return;
   const data=statsData();
-  if(!data){body.innerHTML='<div class="trendempty">No game data bundled. Use Sync to pull your games from chess.com.</div>';if(focus)focus.innerHTML='';return;}
-  const games=data.games.slice().sort((a,b)=>a.d<b.d?-1:1),agg=aggStats(games),t=agg.total,deep=aggDeep(games),eng=data.engine;
-  const rap=statTrend(games,'rapid',20),form=recentForm(games,20),overall=statsScore(t.W,t.L,t.D);
-  const bw=agg.byColor.white,bb=agg.byColor.black,ws=statsScore(bw.w,bw.l,bw.d),bs=statsScore(bb.w,bb.l,bb.d);
-  const lastRapid=games.filter(g=>g.c==='rapid'&&g.r!=null).slice(-1)[0];
-  const pool=agg.openings.filter(o=>o.games>=5),sc=o=>statsScore(o.w,o.l,o.d);
-  const best=pool.length?pool.slice().sort((a,b)=>sc(b)-sc(a))[0]:null,worst=pool.length?pool.slice().sort((a,b)=>sc(a)-sc(b))[0]:null;
-  let html='<div class="statsdash">';
-  html+='<div class="statshero"><div><div class="statskicker">PLAYER DASHBOARD</div><div class="statstitle">Your chess, at a glance</div><div class="statssummary">'+t.games+' synced games · '+t.W+'W '+t.L+'L '+t.D+'D · '+overall.toFixed(0)+'% score</div></div>';
-  html+='<div class="formbadge '+(form.score>=55?'good':form.score<45?'bad':'')+'"><b>'+form.score.toFixed(0)+'%</b><span>last '+form.games+' score</span></div></div>';
-  html+='<div class="statgrid">';
-  html+=statCard('Rapid rating',lastRapid?String(lastRapid.r):'—',rap?(rap.delta>=0?'+':'')+rap.delta+' over last '+rap.games+' rapid games':'Not enough rapid data',rap&&rap.delta>0?'up':rap&&rap.delta<0?'down':'');
-  html+=statCard('Recent form',form.w+'–'+form.l+'–'+form.d,form.score.toFixed(0)+'% score · last '+form.games+' games',form.score>=55?'up':form.score<45?'down':'');
-  html+=statCard('White / Black',ws.toFixed(0)+'% / '+bs.toFixed(0)+'%',Math.abs(ws-bs)<5?'Balanced by color':(ws>bs?'White +':'Black +')+Math.abs(ws-bs).toFixed(0)+' pts');
-  html+=statCard('Game length',agg.avgMoves+' moves',deep.pace&&deep.pace.rapid!=null?deep.pace.rapid.toFixed(1)+' sec/move in rapid':'Average across synced games');
-  html+='</div>';
-
-  const f=focusOfWeek(agg,deep,eng);
-  if(f)html+='<div class="coachcard"><div class="coachicon">🎯</div><div><div class="coachlabel">COACHING PRIORITY</div><b>'+escHtml(f.title)+'</b><p>'+escHtml(f.body)+'</p><div class="coachaction">Next drill: '+escHtml(f.drill)+'</div></div></div>';
-
-  html+='<div class="statscols"><section class="statpanel"><div class="panelhead"><b>Rating trend</b><span>Are you improving?</span></div>'+ratingChartSvg(games)+'</section>';
-  html+='<section class="statpanel"><div class="panelhead"><b>Recent results</b><span>Month-by-month form</span></div>';
-  for(const m of agg.months.slice(-6)){const tot=m.games||1;html+='<div class="mbar"><span class="mlbl">'+escHtml(m.label.slice(5))+'</span><span class="mtrack"><span class="mw" style="width:'+(m.w/tot*100)+'%"></span><span class="md" style="width:'+(m.d/tot*100)+'%"></span><span class="ml" style="width:'+(m.l/tot*100)+'%"></span></span><span class="mval">'+m.w+'-'+m.l+'-'+m.d+'</span></div>';}
-  html+='<div class="resultlegend"><span class="win">Win</span><span class="draw">Draw</span><span class="loss">Loss</span></div></section></div>';
-
-  html+='<section class="statpanel"><div class="panelhead"><b>Opening report card</b><span>Minimum 3 games · prioritize repeat leaks, not tiny samples</span></div>';
-  if(best&&worst)html+='<div class="openingcallouts"><div><span>Best sample</span><b>'+escHtml(best.name)+'</b><em>'+sc(best).toFixed(0)+'% · '+best.games+' games</em></div><div class="weak"><span>Needs work</span><b>'+escHtml(worst.name)+'</b><em>'+sc(worst).toFixed(0)+'% · '+worst.games+' games</em></div></div>';
-  html+='<div class="tablewrap"><table class="opentable"><tr><th>Opening</th><th class="num">Games</th><th class="num">Score</th><th class="num">W-L-D</th></tr>';
-  for(const o of agg.openings.slice(0,14)){const s=sc(o),cls=s>=55?'scoregood':s>=45?'scoreavg':'scorebad';html+='<tr><td><b>'+escHtml(o.name)+'</b></td><td class="num">'+o.games+'</td><td class="num '+cls+'">'+s.toFixed(0)+'%</td><td class="num">'+o.w+'-'+o.l+'-'+o.d+'</td></tr>';}
-  html+='</table></div></section>';
-
-  html+='<div class="statscols"><section class="statpanel"><div class="panelhead"><b>Performance splits</b><span>Where points are gained or lost</span></div>';
-  const split=(lbl,v,n)=>'<div class="splitrow"><span>'+lbl+'</span><div class="splittrack"><i style="width:'+Math.max(0,Math.min(100,v||0))+'%"></i></div><b>'+(v==null?'—':v.toFixed(0)+'%')+'</b><em>'+(n||0)+'g</em></div>';
-  html+=split('White',ws,bw.w+bw.l+bw.d)+split('Black',bs,bb.w+bb.l+bb.d);
-  if(deep.tilt){html+=split('After a loss',deep.tilt.afterLoss.winPct,deep.tilt.afterLoss.n)+split('Session game 1',deep.tilt.sessPos['1'].winPct,deep.tilt.sessPos['1'].n)+split('Session game 3+',deep.tilt.sessPos['3+'].winPct,deep.tilt.sessPos['3+'].n);}
-  html+='</section><section class="statpanel"><div class="panelhead"><b>Opponent strength</b><span>Actual score vs Elo expectation</span></div>';
-  if(deep.ratingDiff.length){for(const b of deep.ratingDiff)html+='<div class="oppbucket"><div><b>'+escHtml(b.bucket)+'</b><span>'+b.games+' games</span></div><div><strong class="'+(b.actual>=b.expected?'scoregood':'scorebad')+'">'+b.actual.toFixed(0)+'%</strong><small>actual</small></div><div><strong>'+b.expected.toFixed(0)+'%</strong><small>expected</small></div></div>';}
-  else html+='<div class="trendempty">Not enough opponent-rating data yet.</div>';
-  html+='</section></div>';
-
-  html+='<div class="statscols"><section class="statpanel"><div class="panelhead"><b>How your games end</b><span>Outcome habits</span></div>';
-  const e=agg.endings,erows=[['Mate wins',e.checkmateWin],['Mate losses',e.checkmateLoss],['Opponent resigned',e.resignWin],['You resigned',e.resignLoss],['Time wins',e.timeoutWin],['Time losses',e.timeoutLoss],['Draws',e.draw]],emax=Math.max(1,...[e.checkmateWin,e.checkmateLoss,e.resignWin,e.resignLoss,e.timeoutWin,e.timeoutLoss,e.draw]);
-  for(const [lbl,v] of erows)html+='<div class="ebar"><span class="elbl">'+lbl+'</span><span class="etrack"><span class="efill" style="display:block;width:'+(v/emax*100)+'%"></span></span><span class="eval">'+v+'</span></div>';
-  html+='</section><section class="statpanel"><div class="panelhead"><b>Repertoire discipline</b><span>Are you playing what you train?</span></div>';
+  if(!data){
+    body.innerHTML='<div class="trendempty">No game data bundled. Use Sync to pull your games from chess.com.</div>';
+    if(focus)focus.innerHTML='';
+    return;
+  }
+  const games=data.games.slice().sort((a,b)=>a.d<b.d?-1:1);
+  const agg=aggStats(games),t=agg.total;
+  let html='';
+  // Dashboard summary — answer the useful questions before the detailed diagnostics.
+  const rapid=games.filter(g=>g.c==='rapid'&&g.r!=null);
+  const currentRapid=rapid.length?rapid[rapid.length-1].r:null;
+  const recent=games.slice(-30), recentAgg=aggStats(recent), rs=recentAgg.total;
+  const rapid30=rapid.slice(-30), rapidDelta=rapid30.length>1?rapid30[rapid30.length-1].r-rapid30[0].r:0;
+  const bw0=agg.byColor.white,bb0=agg.byColor.black;
+  const whiteScore=statsScore(bw0.w,bw0.l,bw0.d), blackScore=statsScore(bb0.w,bb0.l,bb0.d);
+  const allScore=statsScore(t.W,t.L,t.D), recentScore=statsScore(rs.W,rs.L,rs.D);
+  const lastGame=games.length?games[games.length-1].d:'';
+  const insights=buildInsights(agg,games,aggDeep(games),data.engine);
+  const deltaTxt=(rapidDelta>0?'+':'')+rapidDelta;
+  html+='<div class="statshero">'+
+    '<div class="statshero-main"><div class="statskicker">CHESS.COM PERFORMANCE</div><div class="statsrating">'+(currentRapid==null?'—':currentRapid)+'</div><div class="statsratinglabel">Rapid rating <span class="'+(rapidDelta>=0?'up':'down')+'">'+deltaTxt+' last 30 rapid</span></div></div>'+
+    '<div class="statshero-side"><div><b>'+recentScore.toFixed(0)+'%</b><span>Last 30 score</span></div><div><b>'+whiteScore.toFixed(0)+'%</b><span>As White</span></div><div><b>'+blackScore.toFixed(0)+'%</b><span>As Black</span></div></div></div>';
+  html+='<div class="statcards">'+
+    '<div class="statcard"><span>RECENT FORM</span><b>'+rs.W+'–'+rs.L+'–'+rs.D+'</b><small>'+recent.length+' most recent games</small></div>'+
+    '<div class="statcard"><span>CAREER SCORE</span><b>'+allScore.toFixed(0)+'%</b><small>'+t.W+'W · '+t.L+'L · '+t.D+'D</small></div>'+
+    '<div class="statcard"><span>AVG LENGTH</span><b>'+agg.avgMoves+'</b><small>moves per game</small></div>'+
+    '<div class="statcard"><span>LAST GAME</span><b>'+escHtml(lastGame.slice(5)||'—')+'</b><small>'+escHtml(lastGame||'No games')+'</small></div></div>';
+  html+='<div class="coachpanel"><div class="coachhead"><span>COACH&#39;S READ</span><b>What the numbers say</b></div><div class="coachgrid">'+insights.slice(0,4).map((x,i)=>'<div class="coachitem"><em>'+(i+1)+'</em><span>'+escHtml(x)+'</span></div>').join('')+'</div></div>';
+  html+='<div class="statsdetails"><div class="statsdetailtitle">Performance details</div>';
+  // (a) rating chart
+  html+='<div class="statsec">Rating over time</div>'+ratingChartSvg(games);
+  // (b) monthly W/L/D bars
+  html+='<div class="statsec">Results by month</div>';
+  for(const m of agg.months){
+    const tot=m.games||1;
+    html+='<div class="mbar"><span class="mlbl">'+escHtml(m.label)+'</span><span class="mtrack"><span class="mw" style="width:'+(m.w/tot*100)+'%"></span><span class="md" style="width:'+(m.d/tot*100)+'%"></span><span class="ml" style="width:'+(m.l/tot*100)+'%"></span></span><span class="mval">'+m.w+'W '+m.l+'L '+m.d+'D</span></div>';
+  }
+  // per-control totals
+  const ctlOrder=['rapid','blitz','bullet','daily'];
+  for(const c of ctlOrder){
+    const cc=agg.controls[c];if(!cc)continue;
+    html+='<div class="mbar"><span class="mlbl">'+c+'</span><span class="mtrack"><span class="mw" style="width:'+(cc.w/cc.games*100)+'%"></span><span class="md" style="width:'+(cc.d/cc.games*100)+'%"></span><span class="ml" style="width:'+(cc.l/cc.games*100)+'%"></span></span><span class="mval">'+statsScore(cc.w,cc.l,cc.d).toFixed(0)+'% · '+cc.games+'g</span></div>';
+  }
+  // (c) openings table
+  html+='<div class="statsec">Openings (3+ games)</div><table class="opentable"><tr><th>Opening</th><th class="num">Games</th><th class="num">Score</th><th class="num">W-L-D</th></tr>';
+  for(const o of agg.openings.slice(0,12)){
+    const s=statsScore(o.w,o.l,o.d);
+    const cls=s>=55?'scoregood':s>=45?'scoreavg':'scorebad';
+    html+='<tr><td>'+escHtml(o.name)+'</td><td class="num">'+o.games+'</td><td class="num '+cls+'">'+s.toFixed(0)+'%</td><td class="num">'+o.w+'-'+o.l+'-'+o.d+'</td></tr>';
+  }
+  html+='</table>';
+  // (d) color split + how games end
+  html+='<div class="statsec">By color</div>';
+  const bw=agg.byColor.white,bb=agg.byColor.black;
+  html+='<div class="mbar"><span class="mlbl">White</span><span class="mtrack"><span class="mw" style="width:'+(bw.w/(bw.w+bw.l+bw.d||1)*100)+'%"></span></span><span class="mval">'+statsScore(bw.w,bw.l,bw.d).toFixed(0)+'%</span></div>';
+  html+='<div class="mbar"><span class="mlbl">Black</span><span class="mtrack"><span class="mw" style="width:'+(bb.w/(bb.w+bb.l+bb.d||1)*100)+'%"></span></span><span class="mval">'+statsScore(bb.w,bb.l,bb.d).toFixed(0)+'%</span></div>';
+  html+='<div class="statsec">How games ended</div>';
+  const e=agg.endings;
+  const erows=[['Checkmated them',e.checkmateWin],['You got mated',e.checkmateLoss],['They resigned',e.resignWin],['You resigned',e.resignLoss],['Won on time',e.timeoutWin],['Lost on time',e.timeoutLoss],['Draws',e.draw]];
+  const emax=Math.max(1,...erows.map(r=>r[1]));
+  for(const[lbl,v]of erows){
+    html+='<div class="ebar"><span class="elbl">'+lbl+'</span><span class="etrack"><span class="efill" style="display:block;width:'+(v/emax*100)+'%"></span></span><span class="eval">'+v+'</span></div>';
+  }
+  // (d2) the honest mate stat — resignation gap
+  const deep=aggDeep(games),eng=data.engine;
+  const rg=deep.resign;
+  html+='<div class="statsec">The honest mate stat</div><div class="honestbox">';
+  html+='<div class="honestbig">You resign <b>'+rg.myResignRate.toFixed(0)+'%</b> of your losses — your opponents resign <b>'+rg.oppResignRate.toFixed(0)+'%</b> of theirs.</div>';
+  html+='<div class="honestsub">That one habit explains the scary number: '+rg.mateLossShare.toFixed(0)+'% of your losses end in checkmate, but only '+rg.mateWinShare.toFixed(0)+'% of your wins do — because opponents quit before mate. You play dead positions out; they don\u2019t.</div>';
+  if(eng&&eng.mateLosses&&eng.mateLosses.avgDeadLostMoves!=null)
+    html+='<div class="honestsub">Engine check ('+eng.mateLosses.n+' recent losses, depth '+eng.depth+'): you played <b>'+eng.mateLosses.avgDeadLostMoves+' moves</b> on average after the position was dead lost (−5.0). In '+eng.resignWins.n+' wins, opponents played <b>'+eng.resignWins.avgDeadLostMoves+' moves</b> after dead lost before resigning.</div>';
+  html+='<div class="honesttake">🎯 Resigning a dead position isn\u2019t quitting — it\u2019s banking time and energy for the next game.</div></div>';
+  // (d3) tilt & session fatigue
+  const tl=deep.tilt;
+  html+='<div class="statsec">Tilt &amp; session fatigue</div>';
+  const pctRow=(lbl,v,n)=>{const w=v==null?0:Math.max(0,Math.min(100,v));
+    return '<div class="ebar"><span class="elbl">'+lbl+'</span><span class="etrack"><span class="efill" style="display:block;width:'+w+'%"></span></span><span class="eval">'+(v==null?'—':v.toFixed(0)+'%')+'</span></div>'+
+    (n!=null?'<div class="esub">'+n+' games</div>':'');};
+  html+=pctRow('Win% baseline',tl.baseline,t.games);
+  html+=pctRow('Win% right after a loss',tl.afterLoss.winPct,tl.afterLoss.n);
+  html+=pctRow('Win% after 2+ straight losses',tl.after2Losses.winPct,tl.after2Losses.n);
+  html+=pctRow('Session game 1',tl.sessPos['1'].winPct,tl.sessPos['1'].n);
+  html+=pctRow('Session game 2',tl.sessPos['2'].winPct,tl.sessPos['2'].n);
+  html+=pctRow('Session game 3+',tl.sessPos['3+'].winPct,tl.sessPos['3+'].n);
+  html+='<div class="esub">Longest streaks: '+tl.maxWinStreak+' wins · '+tl.maxLossStreak+' losses.</div>';
+  // (d4) score vs rating difference
+  if(deep.ratingDiff.length){
+    html+='<div class="statsec">Score vs rating difference</div>';
+    for(const b of deep.ratingDiff){
+      html+='<div class="pairrow"><span class="elbl">You '+b.bucket+'</span><span class="ptrack"><span class="pfill act" style="width:'+Math.min(100,b.actual)+'%"></span></span><span class="pval">'+b.actual.toFixed(0)+'%</span></div>';
+      html+='<div class="pairrow exp"><span class="elbl">expected</span><span class="ptrack"><span class="pfill" style="width:'+Math.min(100,b.expected)+'%"></span></span><span class="pval">'+b.expected.toFixed(0)+'% · '+b.games+'g</span></div>';
+    }
+    html+='<div class="esub">Expected score from the Elo formula for your average rating gap in each bucket.</div>';
+  }
+  // (d5) when you play
+  html+='<div class="statsec">When you play (Pacific)</div>';
+  for(const h of deep.tod)html+=pctRow(h.label,h.winPct,h.games);
+  html+=pctRow('Weekday',deep.dayType.weekday.winPct,deep.dayType.weekday.games);
+  html+=pctRow('Weekend',deep.dayType.weekend.winPct,deep.dayType.weekend.games);
+  // (d6) repertoire adherence
   const rp=deep.rep;
-  if(rp.vsE4.total)html+=split('Caro vs 1.e4',rp.vsE4.c6/rp.vsE4.total*100,rp.vsE4.total);
-  if(rp.vsD4.total)html+=split('1...d5 vs 1.d4',rp.vsD4.d5/rp.vsD4.total*100,rp.vsD4.total);
-  if(rp.asWhite.total)html+=split('English 1.c4',rp.asWhite.c4/rp.asWhite.total*100,rp.asWhite.total);
-  if(!rp.vsE4.total&&!rp.vsD4.total&&!rp.asWhite.total)html+='<div class="trendempty">Not enough first-move data yet.</div>';
-  html+='</section></div>';
-
-  if(eng||deep.resign){const rg=deep.resign;html+='<section class="statpanel"><div class="panelhead"><b>Conversion & resilience</b><span>Useful engine-backed habits</span></div><div class="metricstrip">';
-    html+='<div><b>'+rg.myResignRate.toFixed(0)+'%</b><span>of losses you resign</span></div><div><b>'+rg.mateLossShare.toFixed(0)+'%</b><span>of losses end in mate</span></div>';
-    if(eng){html+='<div><b>'+eng.thrownWins+'</b><span>sampled thrown wins</span></div><div><b>'+eng.comebacks+'</b><span>sampled comebacks</span></div>';}
-    html+='</div><div class="honestsub">A high checkmate-loss rate is not automatically a tactical weakness; your resignation habits heavily affect it. Use the engine-backed thrown-win and comeback samples as the stronger conversion signal.</div></section>';}
-
-  html+='<section class="statpanel"><div class="panelhead"><b>Coach notes</b><span>What the numbers are saying</span></div><div class="insightcards">';
-  for(const s of buildInsights(agg,games,deep,eng).slice(0,8))html+='<div class="insightcard">'+escHtml(s)+'</div>';
-  html+='</div></section>';
-  const gen=data.generated?('Data through '+escHtml(data.generated)+(data.synced?' · synced from Chess.com':'')):(t.games+' games loaded');
-  html+='<div class="statsfoot">'+gen+' · Sample sizes matter: treat small splits as clues, not conclusions.</div></div>';
-  body.innerHTML=html;if(focus)focus.innerHTML='';
-  const note=document.getElementById('statssyncnote');if(note)note.classList.add('hidden');
+  html+='<div class="statsec">Do you play your repertoire?</div>';
+  if(rp.vsD4.total)html+='<div class="ebar"><span class="elbl">Vs 1.d4: 1...d5</span><span class="etrack"><span class="efill" style="display:block;width:'+(rp.vsD4.d5/rp.vsD4.total*100)+'%"></span></span><span class="eval">'+(rp.vsD4.d5/rp.vsD4.total*100).toFixed(0)+'%</span></div><div class="esub">'+rp.vsD4.total+' games · 1...Nf6 '+(rp.vsD4.Nf6/rp.vsD4.total*100).toFixed(0)+'% · other '+(rp.vsD4.other/rp.vsD4.total*100).toFixed(0)+'%</div>';
+  if(rp.vsE4.total)html+='<div class="ebar"><span class="elbl">Vs 1.e4: Caro (1...c6)</span><span class="etrack"><span class="efill" style="display:block;width:'+(rp.vsE4.c6/rp.vsE4.total*100)+'%"></span></span><span class="eval">'+(rp.vsE4.c6/rp.vsE4.total*100).toFixed(0)+'%</span></div><div class="esub">'+rp.vsE4.total+' games</div>';
+  if(rp.asWhite.total)html+='<div class="ebar"><span class="elbl">As White: 1.e4 / 1.c4</span><span class="etrack"><span class="efill" style="display:block;width:'+(rp.asWhite.e4/rp.asWhite.total*100)+'%"></span></span><span class="eval">'+(rp.asWhite.e4/rp.asWhite.total*100).toFixed(0)+'% / '+(rp.asWhite.c4/rp.asWhite.total*100).toFixed(0)+'%</span></div><div class="esub">'+rp.asWhite.total+' games</div>';
+  // (d7) thrown wins & comebacks
+  if(eng){
+    html+='<div class="statsec">Thrown &amp; stolen</div>';
+    html+='<div class="ebar"><span class="elbl">Thrown wins (was +3, lost)</span><span class="etrack"><span class="efill bad" style="display:block;width:'+(eng.thrownWins/eng.mateLosses.n*100)+'%"></span></span><span class="eval">'+eng.thrownWins+'/'+eng.mateLosses.n+'</span></div>';
+    html+='<div class="ebar"><span class="elbl">Comebacks (was −3, won)</span><span class="etrack"><span class="efill" style="display:block;width:'+(eng.comebacks/eng.resignWins.n*100)+'%"></span></span><span class="eval">'+eng.comebacks+'/'+eng.resignWins.n+'</span></div>';
+    html+='<div class="esub">From '+eng.mateLosses.n+' sampled losses and '+eng.resignWins.n+' sampled wins (engine depth '+eng.depth+').</div>';
+  }
+  // (e) key insights
+  html+='<div class="statsec">Key insights</div><ul class="insightlist">';
+  for(const s of buildInsights(agg,games,deep,eng))html+='<li>'+escHtml(s)+'</li>';
+  html+='</ul>';
+  const sourceDate=data.synced||data.generated||'';
+  const freshest=games.length?games[games.length-1].d:'';
+  html+='</div><div class="statsfooter">'+t.games+' games · latest game '+escHtml(freshest||'—')+(sourceDate?' · last sync '+escHtml(sourceDate):'')+'</div>';
+  body.innerHTML=html;
+  // focus of the week
+  const f=focusOfWeek(agg,deep,eng);
+  if(focus)focus.innerHTML=f?('<div class="focusbox"><div class="flbl">Focus of the week</div><b>'+escHtml(f.title)+'</b><div style="font-size:.78rem;margin-top:4px">'+escHtml(f.body)+'</div><div class="fdrill">🎯 '+escHtml(f.drill)+'</div></div>'):'';
+  const note=document.getElementById('statssyncnote');
+  if(note)note.classList.add('hidden');
 }
 function ecoNameFromUrl(url){
   if(!url)return'Unknown';
