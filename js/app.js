@@ -2613,6 +2613,49 @@ function ratingChartSvg(games){
   const legend=ctrls.filter(([c])=>series[c].length>1).map(([c,col])=>'<span><i style="background:'+col+'"></i>'+c+'</span>').join('');
   return svg+'<div class="rlegend">'+legend+'</div>';
 }
+function aiCoachModel(games,agg){
+  const reviewed=MISTAKE_GAMES.slice().sort((a,b)=>(b.ts||0)-(a.ts||0));
+  const errs=normalizedTrendErrors();
+  const recentReviewed=new Set(reviewed.slice(-20).map(g=>g.id));
+  const recentErrs=errs.filter(e=>recentReviewed.has(e.gameId));
+  const source=recentErrs.length?recentErrs:errs;
+  const by=(key)=>{const m={};source.forEach(e=>{const k=e[key]||'Unknown';if(!m[k])m[k]={name:k,n:0,w:0,impact:0};m[k].n++;m[k].w+=e.weight||1;m[k].impact+=e.impact||0;});return Object.values(m).sort((a,b)=>b.w-a.w);};
+  const themes=by('theme'),phases=by('phase'),cats=by('category');
+  const topTheme=themes[0],topPhase=phases[0],topCat=cats[0];
+  const openings=agg.openings.filter(o=>o.games>=5).map(o=>({...o,score:statsScore(o.w,o.l,o.d)}));
+  const weakOpen=openings.slice().sort((a,b)=>a.score-b.score||b.games-a.games)[0];
+  const strongOpen=openings.slice().sort((a,b)=>b.score-a.score||b.games-a.games)[0];
+  const phaseMap={'Opening':'Opening','Early middlegame':'Strategy','Middlegame':'Strategy','Endgame':'Endgame'};
+  const skill={Opening:{e:0,n:0},Tactics:{e:0,n:0},Strategy:{e:0,n:0},Endgame:{e:0,n:0}};
+  source.forEach(e=>{
+    let k=phaseMap[e.phase]||'Strategy';
+    if(e.theme==='Calculation & forcing moves'||e.category==='Hanging / undefended piece'||e.category==='Missed opponent threat'||e.theme==='King safety & forcing threats')k='Tactics';
+    skill[k].e+=(e.weight||1);skill[k].n++;
+  });
+  const max=Math.max(1,...Object.values(skill).map(x=>x.e));
+  Object.values(skill).forEach(x=>x.score=Math.max(35,Math.round(100-55*x.e/max)));
+  if(!source.length){skill.Tactics.score=skill.Strategy.score=skill.Endgame.score=null;}
+  // Opening score is results-based, not engine-derived.
+  skill.Opening.score=openings.length?Math.round(Math.max(35,Math.min(90,50+(statsScore(agg.total.W,agg.total.L,agg.total.D)-50)*1.5))):null;
+  let headline='Build the coaching baseline';
+  let why='Review games in this tool so I can diagnose recurring tactical, strategic, and endgame mistakes from actual positions.';
+  let drill='Review your next 10 serious rapid games; the coach will turn those positions into a personalized training plan.';
+  if(topTheme){
+    headline=topTheme.name+' is your clearest current leak';
+    why=topTheme.n+' meaningful errors in the analyzed sample point here'+(topPhase?' — most often in the '+topPhase.name.toLowerCase()+'.':'.');
+    drill=themeAdvice(topTheme.name);
+  }
+  if(weakOpen&&weakOpen.score<45)why+=' Your weakest established opening result is '+weakOpen.name+' at '+weakOpen.score.toFixed(0)+'% across '+weakOpen.games+' games.';
+  const priorities=[];
+  if(topTheme)priorities.push({title:topTheme.name,body:themeAdvice(topTheme.name),tag:'#1 priority'});
+  if(topCat)priorities.push({title:topCat.name,body:'This specific mistake has appeared '+topCat.n+' times in the analyzed sample. Use Replay/Mistake Drill on these positions until the better decision becomes automatic.',tag:'Recurring pattern'});
+  if(weakOpen)priorities.push({title:weakOpen.name,body:'You score '+weakOpen.score.toFixed(0)+'% here across '+weakOpen.games+' games. Study where your games first leave your repertoire and what plan the resulting structure requires.',tag:'Opening work'});
+  return {reviewed:reviewed.length,errors:source.length,skills:skill,headline,why,drill,priorities,weakOpen,strongOpen,topTheme,topPhase};
+}
+function coachSkillCard(name,obj,desc){
+  const score=obj.score;
+  return '<div class="skillcard"><div class="skilltop"><b>'+name+'</b><span>'+(score==null?'Building data':score+'/100')+'</span></div><div class="skilltrack"><i style="width:'+(score==null?8:score)+'%"></i></div><small>'+desc+(obj.n?' · '+obj.n+' analyzed errors':'')+'</small></div>';
+}
 function renderStats(){
   const body=document.getElementById('statsbody'),focus=document.getElementById('focusweek');
   if(!body)return;
@@ -2635,6 +2678,7 @@ function renderStats(){
   const allScore=statsScore(t.W,t.L,t.D), recentScore=statsScore(rs.W,rs.L,rs.D);
   const lastGame=games.length?games[games.length-1].d:'';
   const insights=buildInsights(agg,games,aggDeep(games),data.engine);
+  const coach=aiCoachModel(games,agg);
   const deltaTxt=(rapidDelta>0?'+':'')+rapidDelta;
   html+='<div class="statshero">'+
     '<div class="statshero-main"><div class="statskicker">CHESS.COM PERFORMANCE</div><div class="statsrating">'+(currentRapid==null?'—':currentRapid)+'</div><div class="statsratinglabel">Rapid rating <span class="'+(rapidDelta>=0?'up':'down')+'">'+deltaTxt+' last 30 rapid</span></div></div>'+
@@ -2644,7 +2688,14 @@ function renderStats(){
     '<div class="statcard"><span>CAREER SCORE</span><b>'+allScore.toFixed(0)+'%</b><small>'+t.W+'W · '+t.L+'L · '+t.D+'D</small></div>'+
     '<div class="statcard"><span>AVG LENGTH</span><b>'+agg.avgMoves+'</b><small>moves per game</small></div>'+
     '<div class="statcard"><span>LAST GAME</span><b>'+escHtml(lastGame.slice(5)||'—')+'</b><small>'+escHtml(lastGame||'No games')+'</small></div></div>';
-  html+='<div class="coachpanel"><div class="coachhead"><span>COACH&#39;S READ</span><b>What the numbers say</b></div><div class="coachgrid">'+insights.slice(0,4).map((x,i)=>'<div class="coachitem"><em>'+(i+1)+'</em><span>'+escHtml(x)+'</span></div>').join('')+'</div></div>';
+  html+='<div class="aicoach"><div class="aicoachhead"><div><span>YOUR AI COACH</span><h2>'+escHtml(coach.headline)+'</h2></div><div class="coachsample">'+coach.reviewed+' reviewed games · '+coach.errors+' meaningful errors</div></div>'+
+    '<p class="coachwhy">'+escHtml(coach.why)+'</p><div class="skillgrid">'+
+    coachSkillCard('Opening',coach.skills.Opening,'Results + repertoire performance')+
+    coachSkillCard('Tactics',coach.skills.Tactics,'Calculation, threats, loose pieces, king safety')+
+    coachSkillCard('Strategy',coach.skills.Strategy,'Plans, coordination, pawn structure, tempi')+
+    coachSkillCard('Endgame',coach.skills.Endgame,'Technique in analyzed late-game positions')+
+    '</div><div class="coachprescription"><span>DO THIS NEXT</span><b>'+escHtml(coach.drill)+'</b></div></div>';
+  html+='<div class="coachpriorities"><div class="statsdetailtitle">Training priorities</div>'+(coach.priorities.length?coach.priorities.slice(0,3).map((x,i)=>'<div class="priorityrow"><em>0'+(i+1)+'</em><div><span>'+escHtml(x.tag)+'</span><b>'+escHtml(x.title)+'</b><p>'+escHtml(x.body)+'</p></div></div>').join(''):'<div class="trendempty">Review games to unlock position-based coaching priorities.</div>')+'</div>';
   html+='<div class="statsdetails"><div class="statsdetailtitle">Performance details</div>';
   // (a) rating chart
   html+='<div class="statsec">Rating over time</div>'+ratingChartSvg(games);
