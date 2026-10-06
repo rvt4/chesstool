@@ -334,7 +334,7 @@ function saveMistakeTrends(){
   });
   const game={id:fp,ts:Date.now(),bot:BOT_LABEL,color:BOT_GAME_COLOR,result:reviewedGameResult(),summary:reviewedGameSummary(),errors};
   const existing=MISTAKE_GAMES.findIndex(g=>g.id===fp);if(existing>=0)MISTAKE_GAMES[existing]=game;else MISTAKE_GAMES.push(game);
-  MISTAKE_GAMES=MISTAKE_GAMES.slice(-MISTAKE_LOG_MAX_GAMES);try{localStorage.setItem(MISTAKE_LOG_KEY,JSON.stringify(MISTAKE_GAMES));}catch(e){}renderMistakeTrends();
+  MISTAKE_GAMES=MISTAKE_GAMES.slice(-MISTAKE_LOG_MAX_GAMES);try{localStorage.setItem(MISTAKE_LOG_KEY,JSON.stringify(MISTAKE_GAMES));}catch(e){}renderMistakeTrends();if(MODE==='puzzles'){buildPuzzleQueue();updatePuzzleCard();}
 }
 function normalizedTrendErrors(){
   return MISTAKE_GAMES.flatMap(g=>(g.errors||[]).map(x=>{
@@ -2362,6 +2362,9 @@ function show(id,visible){
 
 // ─── STATS TAB ────────────────────────────────────────────────────────────────
 const STATS_CACHE_KEY='chesstool_stats_cache';
+let STATS_WINDOW=100;
+function setStatsWindow(n){STATS_WINDOW=n==='all'?'all':Number(n);renderStats();}
+function statsWindowGames(games){return STATS_WINDOW==='all'?games.slice():games.slice(-STATS_WINDOW);}
 function bundledStats(){
   return (typeof MYGAMES_STATS!=='undefined'&&MYGAMES_STATS&&MYGAMES_STATS.games&&MYGAMES_STATS.games.length)?MYGAMES_STATS:null;
 }
@@ -2650,11 +2653,31 @@ function aiCoachModel(games,agg){
   if(topTheme)priorities.push({title:topTheme.name,body:themeAdvice(topTheme.name),tag:'#1 priority'});
   if(topCat)priorities.push({title:topCat.name,body:'This specific mistake has appeared '+topCat.n+' times in the analyzed sample. Use Replay/Mistake Drill on these positions until the better decision becomes automatic.',tag:'Recurring pattern'});
   if(weakOpen)priorities.push({title:weakOpen.name,body:'You score '+weakOpen.score.toFixed(0)+'% here across '+weakOpen.games+' games. Study where your games first leave your repertoire and what plan the resulting structure requires.',tag:'Opening work'});
-  return {reviewed:reviewed.length,errors:source.length,skills:skill,headline,why,drill,priorities,weakOpen,strongOpen,topTheme,topPhase};
+  return {reviewed:reviewed.length,errors:source.length,source,skills:skill,headline,why,drill,priorities,weakOpen,strongOpen,topTheme,topPhase};
 }
-function coachSkillCard(name,obj,desc){
-  const score=obj.score;
-  return '<div class="skillcard"><div class="skilltop"><b>'+name+'</b><span>'+(score==null?'Building data':score+'/100')+'</span></div><div class="skilltrack"><i style="width:'+(score==null?8:score)+'%"></i></div><small>'+desc+(obj.n?' · '+obj.n+' analyzed errors':'')+'</small></div>';
+function coachBreakdownHtml(coach){
+  const source=coach.source||[];
+  const defs=[
+    ['Tactics',['Calculation & forcing moves','Coordination & threat awareness','King safety & forcing threats']],
+    ['Strategy',['Planning & tempi','Pawn structure & timing']],
+    ['Endgame',[]]
+  ];
+  const rows=[];
+  const add=(label,arr,action)=>{
+    const n=arr.length;if(!n)return;
+    const serious=arr.filter(e=>['Blunder','Miss','Mistake'].includes(e.grade)).length;
+    const phases={};arr.forEach(e=>phases[e.phase]=(phases[e.phase]||0)+1);
+    const phase=Object.entries(phases).sort((a,b)=>b[1]-a[1])[0]?.[0]||'';
+    const examples=arr.slice().sort((a,b)=>(b.weight||0)-(a.weight||0)).slice(0,2);
+    rows.push('<div class="coachleak"><div class="coachleakhead"><div><span>'+escHtml(label)+'</span><b>'+n+' recurring error'+(n===1?'':'s')+'</b></div><em>'+serious+' serious'+(phase?' · mostly '+escHtml(phase.toLowerCase()):'')+'</em></div><p>'+escHtml(action)+'</p>'+(examples.length?'<div class="coachexamples">'+examples.map(e=>'<button onclick="trendViewPosition(\''+String(e.gameId).replace(/'/g,"\\'")+'\','+(e.ply||0)+')">'+escHtml((e.move||'Position')+' · '+(e.category||label))+' →</button>').join('')+'</div>':'')+'</div>');
+  };
+  const groups={};source.forEach(e=>{const k=e.theme||mistakeTheme(e.category);(groups[k]||(groups[k]=[])).push(e);});
+  Object.entries(groups).sort((a,b)=>b[1].reduce((x,e)=>x+(e.weight||1),0)-a[1].reduce((x,e)=>x+(e.weight||1),0)).slice(0,5).forEach(([k,a])=>add(k,a,themeAdvice(k)));
+  const end=source.filter(e=>e.phase==='Endgame');if(end.length)add('Endgame technique',end,'Replay these late-game positions and calculate the forcing line before moving. Focus on king activity, passed pawns, rook activity, and simplifying only when the resulting ending is favorable.');
+  return rows.length?'<div class="coachbreak"><div class="statsdetailtitle">What to actually work on</div>'+rows.join('')+'</div>':'<div class="trendempty">Review more games to unlock specific skill diagnoses and positions from your own play.</div>';
+}
+function statsWindowControls(){
+  return '<div class="statswindow"><span>COACHING WINDOW</span><div>'+[30,100,500,'all'].map(n=>'<button class="'+(String(STATS_WINDOW)===String(n)?'on':'')+'" onclick="setStatsWindow(\''+n+'\')">'+(n==='all'?'All':'Last '+n)+'</button>').join('')+'</div></div>';
 }
 function renderStats(){
   const body=document.getElementById('statsbody'),focus=document.getElementById('focusweek');
@@ -2665,9 +2688,10 @@ function renderStats(){
     if(focus)focus.innerHTML='';
     return;
   }
-  const games=data.games.slice().sort((a,b)=>a.d<b.d?-1:1);
+  const allGames=data.games.slice().sort((a,b)=>a.d<b.d?-1:1);
+  const games=statsWindowGames(allGames);
   const agg=aggStats(games),t=agg.total;
-  let html='';
+  let html=statsWindowControls();
   // Dashboard summary — answer the useful questions before the detailed diagnostics.
   const rapid=games.filter(g=>g.c==='rapid'&&g.r!=null);
   const currentRapid=rapid.length?rapid[rapid.length-1].r:null;
@@ -2689,12 +2713,7 @@ function renderStats(){
     '<div class="statcard"><span>AVG LENGTH</span><b>'+agg.avgMoves+'</b><small>moves per game</small></div>'+
     '<div class="statcard"><span>LAST GAME</span><b>'+escHtml(lastGame.slice(5)||'—')+'</b><small>'+escHtml(lastGame||'No games')+'</small></div></div>';
   html+='<div class="aicoach"><div class="aicoachhead"><div><span>YOUR AI COACH</span><h2>'+escHtml(coach.headline)+'</h2></div><div class="coachsample">'+coach.reviewed+' reviewed games · '+coach.errors+' meaningful errors</div></div>'+
-    '<p class="coachwhy">'+escHtml(coach.why)+'</p><div class="skillgrid">'+
-    coachSkillCard('Opening',coach.skills.Opening,'Results + repertoire performance')+
-    coachSkillCard('Tactics',coach.skills.Tactics,'Calculation, threats, loose pieces, king safety')+
-    coachSkillCard('Strategy',coach.skills.Strategy,'Plans, coordination, pawn structure, tempi')+
-    coachSkillCard('Endgame',coach.skills.Endgame,'Technique in analyzed late-game positions')+
-    '</div><div class="coachprescription"><span>DO THIS NEXT</span><b>'+escHtml(coach.drill)+'</b></div></div>';
+    '<p class="coachwhy">'+escHtml(coach.why)+'</p><div class="coachprescription"><span>DO THIS NEXT</span><b>'+escHtml(coach.drill)+'</b></div></div>'+coachBreakdownHtml(coach);
   html+='<div class="coachpriorities"><div class="statsdetailtitle">Training priorities</div>'+(coach.priorities.length?coach.priorities.slice(0,3).map((x,i)=>'<div class="priorityrow"><em>0'+(i+1)+'</em><div><span>'+escHtml(x.tag)+'</span><b>'+escHtml(x.title)+'</b><p>'+escHtml(x.body)+'</p></div></div>').join(''):'<div class="trendempty">Review games to unlock position-based coaching priorities.</div>')+'</div>';
   html+='<div class="statsdetails"><div class="statsdetailtitle">Performance details</div>';
   // (a) rating chart
@@ -2899,7 +2918,17 @@ const PUZZLE_DAILY_TARGET=10;
 let PUZZLE=null;          // active puzzle state
 let PUZZLE_QUEUE=[];      // ordered puzzle ids
 let PUZZLE_INDEX=0;
-function puzzleList(){return (typeof MY_PUZZLES!=='undefined'&&Array.isArray(MY_PUZZLES))?MY_PUZZLES:[];}
+function puzzleList(){
+  const bundled=(typeof MY_PUZZLES!=='undefined'&&Array.isArray(MY_PUZZLES))?MY_PUZZLES:[];
+  const dynamic=[];
+  normalizedTrendErrors().slice().sort((a,b)=>(b.gameTs||0)-(a.gameTs||0)).forEach((e,i)=>{
+    if(!e.fen||!e.best)return;
+    let bestUci=null;try{bestUci=san2uci(e.fen,e.best);}catch(err){}
+    if(!bestUci)return;
+    dynamic.push({id:'review-'+e.gameId+'-'+e.ply,fen:e.fen,side:parseFen(e.fen).turn,bestUci,bestSan:e.best,playedSan:e.san||'',drop:e.impact||0,phase:(e.phase||'').toLowerCase(),date:e.gameTs?new Date(e.gameTs).toISOString().slice(0,10):'',url:'',opening:e.bot||'Reviewed game',opp:'',evalCp:null,evalMate:null,evalBefore:null,evalAfter:null,swingType:'reviewed-mistake',theme:e.theme,category:e.category});
+  });
+  const seen=new Set(),out=[];[...dynamic,...bundled].forEach(x=>{const k=x.fen+'|'+x.bestUci;if(!seen.has(k)){seen.add(k);out.push(x);}});return out;
+}
 function puzzleProgGet(){
   let p={};
   try{p=JSON.parse(localStorage.getItem(PUZZLE_KEY))||{};}catch(e){p={};}
@@ -3071,7 +3100,7 @@ function handlePuzzleMove(uci){
   });
 }
 
-console.info('ChessTool V2.30 loaded: inflection-point blunder puzzles');
+console.info('ChessTool V2.50 loaded: actionable AI coach + live reviewed-game puzzles');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
