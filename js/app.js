@@ -2350,7 +2350,9 @@ function setMode(mode){
     setStat(m,'info');setCoach(m);renderStats();
   }
   if(mode==='puzzles'){
-    const m='My Blunders: positions from your real chess.com games. Stockfish freshly verifies every answer.';
+    const m=PUZ_MODE==='positional'
+      ?'Positional Masters: deep strategic ideas from famous games. Stockfish freshly verifies every answer.'
+      :'My Blunders: positions from your real chess.com games. Stockfish freshly verifies every answer.';
     setStat(m,'info');setCoach(m);initSF();startPuzzleSession();
   }
 }
@@ -2914,11 +2916,18 @@ function syncStats(){
 
 // ─── PUZZLES TAB (MY BLUNDERS) ────────────────────────────────────────────────
 const PUZZLE_KEY='chesstool_puzzle_progress';
+const POS_KEY='chesstool_pos_progress';
 const PUZZLE_DAILY_TARGET=10;
+let PUZ_MODE='blunders'; // 'blunders' | 'positional'
+function puzKey(){return PUZ_MODE==='positional'?POS_KEY:PUZZLE_KEY;}
+function posPuzzleList(){
+  return (typeof POS_PUZZLES!=='undefined'&&Array.isArray(POS_PUZZLES))?POS_PUZZLES:[];
+}
 let PUZZLE=null;          // active puzzle state
 let PUZZLE_QUEUE=[];      // ordered puzzle ids
 let PUZZLE_INDEX=0;
 function puzzleList(){
+  if(PUZ_MODE==='positional')return posPuzzleList();
   const bundled=(typeof MY_PUZZLES!=='undefined'&&Array.isArray(MY_PUZZLES))?MY_PUZZLES:[];
   const dynamic=[];
   normalizedTrendErrors().slice().sort((a,b)=>(b.gameTs||0)-(a.gameTs||0)).forEach((e,i)=>{
@@ -2931,12 +2940,28 @@ function puzzleList(){
 }
 function puzzleProgGet(){
   let p={};
-  try{p=JSON.parse(localStorage.getItem(PUZZLE_KEY))||{};}catch(e){p={};}
+  try{p=JSON.parse(localStorage.getItem(puzKey()))||{};}catch(e){p={};}
   p.attempts=p.attempts||0;p.solved=p.solved||{};p.streak=p.streak||0;
   p.day=p.day||{date:'',count:0};
   return p;
 }
-function puzzleProgSave(p){try{localStorage.setItem(PUZZLE_KEY,JSON.stringify(p));}catch(e){}}
+function puzzleProgSave(p){try{localStorage.setItem(puzKey(),JSON.stringify(p));}catch(e){}}
+function setPuzMode(m){
+  if(m!=='blunders'&&m!=='positional')return;
+  if(m==='positional'&&!posPuzzleList().length){
+    setStat('Positional puzzles are not bundled in this build.','bad');return;
+  }
+  PUZ_MODE=m;PUZZLE=null;PUZZLE_INDEX=0;
+  const bb=document.getElementById('puztab-blunders'),pb=document.getElementById('puztab-positional');
+  if(bb)bb.classList.toggle('on',m==='blunders');
+  if(pb)pb.classList.toggle('on',m==='positional');
+  const intro=document.getElementById('pzintro');
+  if(intro)intro.innerHTML=m==='positional'
+    ?'Deep strategic positions from <b>famous master games</b> — the kind of quiet, high-level move chess.com puzzles never ask for. Find the grandmaster\'s idea; the explanation appears after you solve it.'
+    :'Positions from <b>your own chess.com games</b> — moments where you actually blundered. This is different from Mistake Drill, which uses mistakes from your in-app bot games. You are told what you played; find the improvement.';
+  const ex=document.getElementById('pzexplain');if(ex){ex.classList.add('hidden');ex.innerHTML='';}
+  startPuzzleSession();
+}
 function puzzleTodayStr(){return new Date().toISOString().slice(0,10);}
 function buildPuzzleQueue(){
   const list=puzzleList(),prog=puzzleProgGet();
@@ -2993,8 +3018,17 @@ function startPuzzle(id){
   BOT_ACTIVE=false;PRACTICE_LOCK=true;
   refreshPanel();drawBoard();drawMoveList();
   const pr=document.getElementById('pzprompt');
-  if(pr)pr.innerHTML='vs <b>'+escHtml(item.opp)+'</b> · '+escHtml(item.date)+' · '+escHtml(item.opening)+'<br>You played <b>'+escHtml(item.playedSan)+'</b>??'+puzzleSwingHtml(item)+' — find the improvement.';
-  const prompt='Puzzle: you played '+item.playedSan+' — find the improvement. Freshly verifying with Stockfish…';
+  const ex0=document.getElementById('pzexplain');if(ex0){ex0.classList.add('hidden');ex0.innerHTML='';}
+  if(pr){
+    if(PUZ_MODE==='positional'){
+      pr.innerHTML='<b>'+escHtml(item.title||'Positional puzzle')+'</b> · '+escHtml(item.game||'')+'<br><span style="color:var(--muted)">Theme: '+escHtml(item.theme||'strategy')+' — find the grandmaster\'s move.</span>';
+    }else{
+      pr.innerHTML='vs <b>'+escHtml(item.opp)+'</b> · '+escHtml(item.date)+' · '+escHtml(item.opening)+'<br>You played <b>'+escHtml(item.playedSan)+'</b>??'+puzzleSwingHtml(item)+' — find the improvement.';
+    }
+  }
+  const prompt=PUZ_MODE==='positional'
+    ?'Positional puzzle: '+(item.title||'')+'. Freshly verifying with Stockfish…'
+    :'Puzzle: you played '+item.playedSan+' — find the improvement. Freshly verifying with Stockfish…';
   setStat(prompt,'info');setCoach(prompt);
   const nx=document.getElementById('pznext');if(nx)nx.classList.add('hidden');
   updatePuzzleCard();
@@ -3077,6 +3111,10 @@ function handlePuzzleMove(uci){
         const quality=exactBest?'the fresh engine best move':'an engine-equivalent improvement';
         const msg='✓ Verified — '+san+' is '+quality+tries+'.'+evalPart+replyPart;
         setStat(msg,'ok');setCoach(msg+' Nice — this is exactly the kind of position you used to get wrong.');
+        if(PUZ_MODE==='positional'&&r.item.explanation){
+          const ex=document.getElementById('pzexplain');
+          if(ex){ex.innerHTML='<b>The idea:</b> '+escHtml(r.item.explanation);ex.classList.remove('hidden');}
+        }
         const prev=prog.solved[r.item.id]||{};
         prog.solved[r.item.id]={s:true,f:prev.f||0,last:Date.now()};
         prog.streak++;prog.day.count++;
@@ -3100,7 +3138,7 @@ function handlePuzzleMove(uci){
   });
 }
 
-console.info('ChessTool V2.50 loaded: actionable AI coach + live reviewed-game puzzles');
+console.info('ChessTool V2.32 loaded: actionable AI coach + live reviewed-game puzzles');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};

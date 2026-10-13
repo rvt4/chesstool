@@ -125,8 +125,8 @@ function uci2san(fen,uci){
   const{bd,turn,ep}=parseFen(fen);
   const ff=uci.charCodeAt(0)-97,fr=+uci[1]-1,tf=uci.charCodeAt(2)-97,tr=+uci[3]-1;
   const p=GP(bd,fr,ff);if(!p)return uci;
-  if(uci==='e1g1'||uci==='e8g8')return'O-O';
-  if(uci==='e1c1'||uci==='e8c8')return'O-O-O';
+  if((uci==='e1g1'||uci==='e8g8')&&p.toUpperCase()==='K')return'O-O';
+  if((uci==='e1c1'||uci==='e8c8')&&p.toUpperCase()==='K')return'O-O-O';
   const pt=p.toUpperCase();
   const isEp=pt==='P'&&ep!=='-'&&S2A(tr,tf)===ep&&ff!==tf&&!GP(bd,tr,tf);
   const cap=(GP(bd,tr,tf)||isEp)?'x':'';
