@@ -188,6 +188,9 @@ nav{display:flex;gap:5px;flex-wrap:wrap}
 @media(max-width:800px){#botcard .skb{font-size:.66rem;padding:7px 1px}}
 
 /* V2.13 review performance controls */
+.puzmodes{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
+.pzexplain{font-size:.78rem;line-height:1.5;color:var(--txt);background:var(--mbg);border:1px solid var(--acc);border-left:4px solid var(--acc);border-radius:5px;padding:9px 10px;margin:8px 0}
+.pzexplain b{color:var(--acc)}
 .reviewmodes{display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;margin-bottom:8px;font-size:.72rem;color:var(--muted)}
 .reviewmodes .skb{padding:6px 10px}
 @media(max-width:800px){.reviewmodes{position:sticky;top:0;background:var(--surf);z-index:2;padding:3px 0}}

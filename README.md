@@ -1,4 +1,35 @@
-# ChessTool V2.30
+# ChessTool V2.32
+
+## New in V2.32 — repertoire gap-fillers + Positional Masters puzzles
+
+**Repertoire (from October games — 147 rapid games analyzed):**
+- White: two new Owen's Defense lines (`owens-main`: 3.Nc3 e6 4.Nf3 Bb4 5.Bd3
+  Nf6 6.Qe2; `owens-bd3`: 3.Bd3 challenging immediately) — 5 Owen's games faced,
+  0 prep before.
+- White: `petrov-white` (classical 3.Nxe5 d6) and `petrov-stafford`
+  (3...Nc6?! Stafford Gambit — both October Petrov games were Staffords, both lost).
+- White: `philidor-sidelines` (3.Bc4 — the most common Philidor deviation,
+  genuinely different from the d4-based main line) and `it-semi`
+  (Semi-Italian 3...d6 with the 4.d4 break).
+- Black: two London System lines (`london-c5`: the principled ...c5 strike vs
+  2.Bf4; `london-solid`: ...e6/...c5 vs 2.Nf3) — 10 London games faced in October,
+  0 prep before. The Zukertort/Chigorin move orders seen are London move orders
+  and are covered by these lines.
+- Black: `english-caro` (1.c4 c6 2...d5 with ...Bf5 Caro-style development).
+- New repertoire groups: "1.e4 / Owen's Defense (White)", "London System (Black)",
+  "English (Black)". All 33 drill lines verified: every SAN resolves via core.js.
+
+**Bug fix:** `core.js` `uci2san` no longer labels a rook move e8→g8 as `O-O`
+(the castling label now applies only when the moving piece is the king). This
+previously broke SAN resolution for PGN imports containing ...Rg8.
+
+**Positional Masters puzzles:** a new "Positional Masters" sub-tab next to
+"My Blunders" in the Puzzles tab. 24+ deep strategic positions from famous
+master games (prophylaxis, exchange sacrifices, pawn breaks, outposts,
+blockades, zugzwang, king hunts...), each with a single engine-verified best
+move (Stockfish 19, depth 18+) and a written explanation of the idea shown
+after solving. Separate progress tracking (`chesstool_pos_progress`) and
+spaced repetition; answers are freshly engine-verified like My Blunders.
 
 ## New in V2.30 — inflection-point puzzles
 
