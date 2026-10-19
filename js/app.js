@@ -2871,13 +2871,18 @@ function syncGameRecord(g){
 }
 function syncStats(){
   const note=document.getElementById('statssyncnote'),btn=document.getElementById('syncbtn');
+  const coachNote=document.getElementById('coachsyncnote'),coachBtn=document.getElementById('coachsyncbtn');
   if(!note)return;
   note.classList.remove('hidden');
   note.innerHTML='Syncing from chess.com…';
+  if(coachNote)coachNote.textContent='Syncing from chess.com…';
   if(btn)btn.disabled=true;
+  if(coachBtn)coachBtn.disabled=true;
   const done=(msg,isErr)=>{
     note.innerHTML=msg;
+    if(coachNote)coachNote.textContent=msg;
     if(btn)btn.disabled=false;
+    if(coachBtn)coachBtn.disabled=false;
     if(!isErr)setTimeout(()=>note.classList.add('hidden'),4000);
   };
   fetch('https://api.chess.com/pub/player/rvt8/games/archives')
@@ -3163,10 +3168,19 @@ function renderCoachDashboard(){
 }
 function coachGoPuzzles(){setMode('puzzles');setPuzMode('blunders');}
 function coachGoTrain(){setMode('drill');}
+// Reconstruct the exact real-game position before 21.Qc3. Keep the
+// coach exercise independent of the opening repertoire and training mode.
+const COACH_THREAT_SANS=['e4','e5','Nf3','d6','d4','exd4','Nxd4','Be7','Nc3','Nf6','Bf4','O-O','Bc4','a6','O-O','b5','Bd3','Bb7','Re1','Nbd7','Nf5','b4','Nxe7+','Qxe7','Nd5','Nxd5','exd5','Qf6','Qh5','g6','Qg4','Bxd5','Bh6','Ne5','Qxb4','Rfb8','Qc3','Rxb2','Qxc7','Rb7'];
 function coachStartThreat(){
   const root=document.getElementById('coachbody');if(!root)return;
-  root.innerHTML='<div class="coachfocus"><h2>Threat recognition — your 21.Qc3 mistake</h2><p>Black: queen on f6, knight on e5. White: king on g1, queen considering c3. Before placing the queen on c3, what forcing move should you check?</p><div class="coachanswers"><button class="cb" onclick="coachThreatAnswer(false)">...Rxb2</button><button class="cb" onclick="coachThreatAnswer(true)">...Nf3+</button><button class="cb" onclick="coachThreatAnswer(false)">...Qxf2+</button></div><div id="coachthreatfeedback" aria-live="polite"></div><button class="cb" onclick="renderCoachDashboard()">← Coach dashboard</button></div>';
+  const position=fenFromSans(COACH_THREAT_SANS);
+  if(position===INIT){root.textContent='Could not load the training position. Please refresh and retry.';return;}
+  FEN=position;HIST=[position];SANS=[];SEL=null;LDOTS=[];LF=null;LT=null;FLIPPED=false;
+  drawBoard();drawMoveList();refreshPanel();
+  root.innerHTML='<div class="coachfocus"><h2>Threat recognition — before 21.Qc3</h2><p>The board shows your actual position after 20...Rb7. You are White. Before choosing where to put your queen, identify Black’s forcing tactical idea if you return to c3.</p><div class="coachanswers"><button class="cb" onclick="coachThreatAnswer(false)">...Rxb2</button><button class="cb" onclick="coachThreatAnswer(true)">...Nf3+</button><button class="cb" onclick="coachThreatAnswer(false)">...Qxf2+</button></div><div id="coachthreatfeedback" aria-live="polite"></div><button class="cb" onclick="coachLeaveThreat()">← Coach dashboard</button></div>';
+  setStat('Threat training: position after 20...Rb7. Identify the tactical threat before moving your queen.','info');
 }
+function coachLeaveThreat(){fullReset();renderCoachDashboard();setStat('Coach dashboard.','info');}
 function coachThreatAnswer(correct){
   const el=document.getElementById('coachthreatfeedback');if(!el)return;
   el.innerHTML=correct?'<p><b>Correct.</b> ...Nf3+ checks the king and uncovers the f6–e5–d4–c3 diagonal, exposing your queen on c3. This is a discovered attack with check.</p><p><b>Habit:</b> Before every queen move, scan knight checks and discovered attacks one more time.</p>':'<p><b>Try again.</b> Look for a knight move that checks your king while opening a diagonal from Black’s queen on f6.</p>';
