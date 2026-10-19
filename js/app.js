@@ -3058,19 +3058,23 @@ function startPuzzle(id){
   const nx=document.getElementById('pznext');if(nx)nx.classList.add('hidden');
   updatePuzzleCard();
   document.getElementById('board')?.scrollIntoView({behavior:'smooth',block:'center'});
-  coachWaitForEngine(()=>sfAnalyzePositionFresh(item.fen,15,res=>{
-    if(!PUZZLE||PUZZLE.item.id!==id||MODE!=='puzzles')return;
-    PUZZLE.validating=false;PRACTICE_LOCK=false;
-    if(!res){
-      const msg='Fresh verification was unavailable. The puzzle is paused rather than trusting the cached answer.';
-      setStat(msg+' You can still select another puzzle.','bad');setCoach(msg);PUZZLE.checking=true;document.getElementById('pznext')?.classList.remove('hidden');return;
-    }
-    const ev=infoWhiteEval(item.fen,res.info);
-    evaluationPerspectiveSanity(item.fen,res.info,ev);
-    PUZZLE.bestUci=res.best;PUZZLE.bestSan=uci2san(item.fen,res.best)||'';PUZZLE.bestEval=ev;
-    const msg='Puzzle verified. Find the improvement over '+item.playedSan+'.';
-    setStat(msg,'info');setCoach(msg);
-  }));
+  // Do not block the board on an unavailable/slow browser engine.
+  // Bundled positions carry precomputed best moves; distinguish them from live verification.
+  const cached=item.bestUci || (item.bestSan?san2uci(item.fen,item.bestSan):null);
+  PUZZLE.bestUci=cached;
+  PUZZLE.bestSan=item.bestSan || (cached?uci2san(item.fen,cached):'');
+  PUZZLE.validating=false;PRACTICE_LOCK=false;
+  const ready=cached?'Play a move. This position uses its saved answer; live engine verification is optional.':'Play a legal move. Engine grading is unavailable for this position.';
+  setStat(ready,'info');setCoach(ready);
+  // Analyze only if engine is already ready; never hold the user hostage to a download.
+  if(SF&&SF_READY&&!SF_FAILED){
+    sfAnalyzePositionFresh(item.fen,12,res=>{
+      if(!PUZZLE||PUZZLE.item.id!==id||MODE!=='puzzles'||PUZZLE.attempts)return;
+      if(res){PUZZLE.bestUci=res.best;PUZZLE.bestSan=uci2san(item.fen,res.best)||'';
+        PUZZLE.bestEval=infoWhiteEval(item.fen,res.info);}
+    });
+  }
+
 }
 function nextPuzzle(){
   if(!PUZZLE_QUEUE.length)return startPuzzleSession();
@@ -3106,63 +3110,42 @@ function handlePuzzleMove(uci){
   FEN=afterFen;HIST=[originalFen,afterFen];SANS=[san];SEL=null;LDOTS=[];drawBoard();drawMoveList();
   setStat('Verifying '+san+' from the original position…','info');
   updatePuzzleCard();
-  // Never trust the cached answer: fresh Stockfish analysis of both the
-  // puzzle position and the played move, then accept near-equivalents.
-  sfAnalyzePlayedMoveFresh(originalFen,uci,15,candidateRes=>{
-    if(!PUZZLE||PUZZLE!==r)return;
-    if(!candidateRes){
-      const msg='Could not verify '+san+'. The puzzle will not mark it correct without a fresh engine result.';
-      setStat(msg,'bad');setCoach(msg);resetPuzzlePosition(r);return;
+  // Grade instantly against the stored answer, with optional live engine grading.
+  // Never freeze the board if Stockfish cannot initialize on mobile.
+  function finishPuzzle(accepted,verified){
+    if(PUZZLE!==r||MODE!=='puzzles')return;
+    const today=puzzleTodayStr();if(prog.day.date!==today)prog.day={date:today,count:0};
+    const prev=prog.solved[r.item.id]||{};
+    if(accepted){
+      const mastery=r.attempts===1?Math.min(5,(prev.mastery||0)+1):0;
+      const days=[1,3,7,14,30,60][mastery];
+      prog.solved[r.item.id]={s:true,f:prev.f||0,last:Date.now(),mastery,due:Date.now()+days*86400000};
+      prog.streak++;prog.day.count++;
+      const msg='Correct: '+san+'. '+(verified?'Verified by Stockfish.':'Matched the saved puzzle answer (not freshly engine-verified).');
+      setStat(msg,'ok');setCoach(msg);
+      if(PUZ_MODE==='positional'&&r.item.explanation){const ex=document.getElementById('pzexplain');if(ex){ex.textContent='The idea: '+r.item.explanation;ex.classList.remove('hidden');}}
+      document.getElementById('pznext')?.classList.remove('hidden');
+      r.checking=true;
+    }else{
+      prog.solved[r.item.id]={s:false,f:(prev.f||0)+1,last:Date.now(),mastery:0,due:0};prog.streak=0;
+      setStat('Not quite: '+san+'. Try again; look for checks, captures, and threats.','bad');
+      setCoach('Try again. '+(r.bestSan?'Saved answer: '+r.bestSan+'.':''));
+      setTimeout(()=>resetPuzzlePosition(r),900);
     }
-    const candidateEval=infoWhiteEval(originalFen,candidateRes.info);
-    evaluationPerspectiveSanity(originalFen,candidateRes.info,candidateEval);
-    const loss=replayEvalLoss(r.bestEval,candidateEval,mover);
-    const exactBest=uci===r.bestUci;
-    const nearBest=loss!=null&&loss<=0.35; // <= ~0.35 pawns from the fresh best
-    const accepted=exactBest||nearBest;
-    sfAnalyzePositionFresh(afterFen,14,replyRes=>{
-      if(!PUZZLE||PUZZLE!==r)return;
-      let reply='',afterEval=null;
-      if(replyRes){
-        reply=replayReplyDescription(afterFen,replyRes.best);
-        afterEval=infoWhiteEval(afterFen,replyRes.info);
-      }
-      const evalPart=afterEval?' Resulting eval: '+evalText(afterEval)+'.':'';
-      const replyPart=reply?' Opponent’s strongest reply: '+reply+'.':'';
-      const tries=r.attempts>1?' after '+r.attempts+' tries':'';
-      const today=puzzleTodayStr();
-      if(prog.day.date!==today){prog.day={date:today,count:0};}
-      if(accepted){
-        const quality=exactBest?'the fresh engine best move':'an engine-equivalent improvement';
-        const msg='✓ Verified — '+san+' is '+quality+tries+'.'+evalPart+replyPart;
-        setStat(msg,'ok');setCoach(msg+' Nice — this is exactly the kind of position you used to get wrong.');
-        if(PUZ_MODE==='positional'&&r.item.explanation){
-          const ex=document.getElementById('pzexplain');
-          if(ex){ex.innerHTML='<b>The idea:</b> '+escHtml(r.item.explanation);ex.classList.remove('hidden');}
-        }
-        const prev=prog.solved[r.item.id]||{};
-        const mastery=r.attempts===1?Math.min(5,(prev.mastery||0)+1):0;
-        const days=[1,3,7,14,30,60][mastery];
-        prog.solved[r.item.id]={s:true,f:prev.f||0,last:Date.now(),mastery,due:Date.now()+days*86400000};
-        prog.streak++;prog.day.count++;
-        puzzleProgSave(prog);
-        const nx=document.getElementById('pznext');if(nx)nx.classList.remove('hidden');
-        updatePuzzleCard();renderCoachDashboard();
-        r.checking=true;PRACTICE_LOCK=true; // keep the solved position visible
-        return;
-      }
-      const prev=prog.solved[r.item.id]||{};
-      prog.solved[r.item.id]={s:false,f:(prev.f||0)+1,last:Date.now(),mastery:0,due:0};
-      prog.streak=0;
-      puzzleProgSave(prog);
-      const bestText=r.bestSan?' The improvement was '+r.bestSan+'.':'';
-      const lossText=loss!=null&&loss<90?' Your move is about '+loss.toFixed(2)+' pawns worse than the fresh best.':'';
-      const msg='Not quite — '+san+' did not pass fresh verification.'+bestText+lossText+evalPart+replyPart+' This puzzle will come back sooner. Try again.';
-      setStat(msg,'bad');setCoach(msg);
-      updatePuzzleCard();renderCoachDashboard();
-      setTimeout(()=>resetPuzzlePosition(r),1700);
+    puzzleProgSave(prog);updatePuzzleCard();renderCoachDashboard();
+  }
+  if(r.bestUci){finishPuzzle(uci===r.bestUci,false);return;}
+  // Uncached positions still remain playable; request engine only when available.
+  if(SF&&SF_READY&&!SF_FAILED){
+    sfAnalyzePositionFresh(originalFen,12,res=>{
+      if(!res){setStat('Could not grade this position; skip to another puzzle.','bad');document.getElementById('pznext')?.classList.remove('hidden');return;}
+      finishPuzzle(uci===res.best,true);
     });
-  });
+  }else{
+    setStat('This position has no saved answer and Stockfish is unavailable. Skip to the next puzzle.','bad');
+    document.getElementById('pznext')?.classList.remove('hidden');
+  }
+
 }
 
 
@@ -3208,20 +3191,31 @@ function coachStartMiddlegame(index){
 // Reconstruct the exact real-game position before 21.Qc3. Keep the
 // coach exercise independent of the opening repertoire and training mode.
 const COACH_THREAT_SANS=['e4','e5','Nf3','d6','d4','exd4','Nxd4','Be7','Nc3','Nf6','Bf4','O-O','Bc4','a6','O-O','b5','Bd3','Bb7','Re1','Nbd7','Nf5','b4','Nxe7+','Qxe7','Nd5','Nxd5','exd5','Qf6','Qh5','g6','Qg4','Bxd5','Bh6','Ne5','Qxb4','Rfb8','Qc3','Rxb2','Qxc7','Rb7'];
-function coachStartThreat(){
-  const root=document.getElementById('coachbody');if(!root)return;
-  const position=fenFromSans(COACH_THREAT_SANS);
-  if(position===INIT){root.textContent='Could not load the training position. Please refresh and retry.';return;}
-  FEN=position;HIST=[position];SANS=[];SEL=null;LDOTS=[];LF=null;LT=null;FLIPPED=false;
-  drawBoard();drawMoveList();refreshPanel();
-  root.innerHTML='<div class="coachfocus"><h2>Threat recognition — before 21.Qc3</h2><p>The board shows your actual position after 20...Rb7. You are White. Before choosing where to put your queen, identify Black’s forcing tactical idea if you return to c3.</p><div class="coachanswers"><button class="cb" onclick="coachThreatAnswer(false)">...Rxb2</button><button class="cb" onclick="coachThreatAnswer(true)">...Nf3+</button><button class="cb" onclick="coachThreatAnswer(false)">...Qxf2+</button></div><div id="coachthreatfeedback" aria-live="polite"></div><button class="cb hidden" id="coachthreatnext" onclick="coachGoPuzzles()">Next: practice my mistakes →</button> <button class="cb" onclick="coachLeaveThreat()">← Coach dashboard</button></div>';
-  setStat('Threat training: position after 20...Rb7. Identify the tactical threat before moving your queen.','info');
+let COACH_THREAT_INDEX=0;
+function coachThreatItems(){
+  const first={fen:fenFromSans(COACH_THREAT_SANS),title:'Remember a discovered attack',question:'You are White. What forcing idea would Black have if you put your queen back on c3?',answers:['...Rxb2','...Nf3+','...Qxf2+'],correct:1,explain:'...Nf3+ gives check and opens the f6–e5–d4–c3 diagonal toward your queen.'};
+  const more=puzzleList().filter(p=>p.fen&&(p.bestSan||p.bestUci)).slice(0,12).map(p=>{
+    const answer=p.bestSan||uci2san(p.fen,p.bestUci);
+    const decoys=[p.playedSan,'Pass / do nothing','Trade queens'].filter(x=>x&&x!==answer).slice(0,2);
+    return {fen:p.fen,title:'Recognize the danger — '+(p.opening||'your game'),question:'You are '+(parseFen(p.fen).turn==='w'?'White':'Black')+'. Find the strongest response before making a routine move.',answers:[decoys[0]||'Wait',answer,decoys[1]||'Retreat'],correct:1,explain:'Saved improvement: '+answer+'. This exercise uses a previously analyzed game position, not a new engine verification.'};
+  });
+  return [first,...more];
 }
+function coachStartThreat(){
+  const items=coachThreatItems();if(!items.length)return;
+  COACH_THREAT_INDEX%=items.length;
+  const item=items[COACH_THREAT_INDEX],root=document.getElementById('coachbody');if(!root)return;
+  FEN=item.fen;HIST=[item.fen];SANS=[];SEL=null;LDOTS=[];LF=null;LT=null;FLIPPED=parseFen(item.fen).turn==='b';
+  drawBoard();drawMoveList();refreshPanel();
+  root.innerHTML='<div class="coachfocus"><h2>'+escHtml(item.title)+'</h2><p>'+escHtml(item.question)+'</p><p><b>Position '+(COACH_THREAT_INDEX+1)+' of '+items.length+'</b></p><div class="coachanswers">'+item.answers.map((a,i)=>'<button class="cb" onclick="coachThreatAnswer('+i+')">'+escHtml(a)+'</button>').join('')+'</div><div id="coachthreatfeedback" aria-live="polite"></div><button class="cb" id="coachthreatnext" onclick="coachNextThreat()">Next position →</button> <button class="cb" onclick="coachLeaveThreat()">← Coach dashboard</button></div>';
+  setStat('Coach: identify the forcing move. Use Next position to continue.','info');
+}
+function coachNextThreat(){COACH_THREAT_INDEX=(COACH_THREAT_INDEX+1)%coachThreatItems().length;coachStartThreat();}
 function coachLeaveThreat(){fullReset();renderCoachDashboard();setStat('Coach dashboard.','info');}
-function coachThreatAnswer(correct){
-  const el=document.getElementById('coachthreatfeedback');if(!el)return;
-  if(correct)document.getElementById('coachthreatnext')?.classList.remove('hidden');
-  el.innerHTML=correct?'<p><b>Correct.</b> ...Nf3+ checks the king and uncovers the f6–e5–d4–c3 diagonal, exposing your queen on c3. This is a discovered attack with check.</p><p><b>Habit:</b> Before every queen move, scan knight checks and discovered attacks one more time.</p>':'<p><b>Try again.</b> Look for a knight move that checks your king while opening a diagonal from Black’s queen on f6.</p>';
+function coachThreatAnswer(choice){
+  const item=coachThreatItems()[COACH_THREAT_INDEX],el=document.getElementById('coachthreatfeedback');if(!el)return;
+  const correct=choice===item.correct;
+  el.innerHTML=correct?'<p><b>Correct.</b> '+escHtml(item.explain)+'</p>':'<p><b>Not quite.</b> '+escHtml(item.explain)+'</p>';
 }
 
 console.info('ChessTool V2.33 loaded: actionable AI coach + live reviewed-game puzzles');
