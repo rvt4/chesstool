@@ -3021,6 +3021,19 @@ function puzzleSwingHtml(item){
   if(item.swingType==='even-to-lost')return' — you were level at '+b+' and fell to '+a+'. Find the move that held the balance';
   return' — you went from '+b+' to '+a;
 }
+// The Stockfish worker is fetched asynchronously. Do not permanently lock the
+// puzzle board while that network request is still in progress.
+function coachWaitForEngine(cb){
+  initSF();
+  const started=Date.now();
+  function poll(){
+    if(SF_FAILED){cb();return;}
+    if(SF&&SF_READY){cb();return;}
+    if(Date.now()-started>12000){cb();return;}
+    setTimeout(poll,150);
+  }
+  poll();
+}
 function startPuzzle(id){
   const item=puzzleList().find(p=>p.id===id);
   if(!item){setStat('Puzzle not found.','bad');return;}
@@ -3045,19 +3058,19 @@ function startPuzzle(id){
   const nx=document.getElementById('pznext');if(nx)nx.classList.add('hidden');
   updatePuzzleCard();
   document.getElementById('board')?.scrollIntoView({behavior:'smooth',block:'center'});
-  sfAnalyzePositionFresh(item.fen,15,res=>{
+  coachWaitForEngine(()=>sfAnalyzePositionFresh(item.fen,15,res=>{
     if(!PUZZLE||PUZZLE.item.id!==id||MODE!=='puzzles')return;
     PUZZLE.validating=false;PRACTICE_LOCK=false;
     if(!res){
       const msg='Fresh verification was unavailable. The puzzle is paused rather than trusting the cached answer.';
-      setStat(msg,'bad');setCoach(msg);PUZZLE.checking=true;return;
+      setStat(msg+' You can still select another puzzle.','bad');setCoach(msg);PUZZLE.checking=true;document.getElementById('pznext')?.classList.remove('hidden');return;
     }
     const ev=infoWhiteEval(item.fen,res.info);
     evaluationPerspectiveSanity(item.fen,res.info,ev);
     PUZZLE.bestUci=res.best;PUZZLE.bestSan=uci2san(item.fen,res.best)||'';PUZZLE.bestEval=ev;
     const msg='Puzzle verified. Find the improvement over '+item.playedSan+'.';
     setStat(msg,'info');setCoach(msg);
-  });
+  }));
 }
 function nextPuzzle(){
   if(!PUZZLE_QUEUE.length)return startPuzzleSession();
@@ -3167,7 +3180,31 @@ function renderCoachDashboard(){
     '<div class="coachfocus"><h3>What sync does today</h3><p>Sync collects game statistics and saves PGNs for newly discovered rapid games on this device. It does <b>not yet</b> automatically run engine analysis on those PGNs or turn them into verified puzzles. Reviewed in-app games already feed the personal mistake queue.</p><p>Spaced repetition now schedules correct first-try answers for 1, 3, 7, 14, 30 or 60 days. Failed or retried puzzles return to the near-term queue.</p></div>';
 }
 function coachGoPuzzles(){setMode('puzzles');setPuzMode('blunders');}
-function coachGoTrain(){setMode('drill');}
+function coachGoTrain(){
+  setMode('coach');
+  const root=document.getElementById('coachbody');
+  const plans=(typeof PLAN_DB!=='undefined'?PLAN_DB:[]).filter(p=>p.sans&&p.sans.length);
+  root.innerHTML='<div class="coachfocus"><h2>Middlegame practice — choose a position</h2><p>This starts directly from a real opening structure. It does not change your opening repertoire or require you to drill it first.</p>'+plans.map((p,i)=>'<button class="cb" style="display:block;margin:8px 0;width:100%;text-align:left" onclick="coachStartMiddlegame('+i+')">'+escHtml(p.title)+'</button>').join('')+'<button class="cb" onclick="renderCoachDashboard()">← Coach</button></div>';
+}
+function coachStartMiddlegame(index){
+  const plans=PLAN_DB.filter(p=>p.sans&&p.sans.length),plan=plans[index];if(!plan)return;
+  const position=fenFromSans(plan.sans);
+  if(position===INIT){setStat('Could not load this middlegame position.','bad');return;}
+  setMode('drill');
+  FEN=position;HIST=[position];SANS=plan.sans.slice();
+  SESSION_COLOR=String(plan.side).toLowerCase()==='black'?'black':'white';
+  DRILL_COLOR=SESSION_COLOR;FLIPPED=SESSION_COLOR==='black';
+  SESSION_STARTED=true;PRACTICE_LOCK=false;STUDY_PLAN=plan;STUDY_PHASE='middlegame';
+  STUDY_PLAN_START_PLY=SANS.length;STUDY_PLAN_TARGET_PLY=SANS.length+20;
+  MID_FEEDBACK='';MID_PRE_ANALYSIS=null;MID_ANALYZING=false;
+  SEL=null;LDOTS=[];LF=null;LT=null;
+  refreshPanel();drawBoard();drawMoveList();renderStudy();renderMiddlegamePanel(true);
+  setStat('MIDDLEGAME: '+plan.title+' — '+plan.goal,'info');
+  setCoach('Opponent wants: '+plan.opp+' Your goal: '+plan.goal);
+  if(parseFen(FEN).turn!==(SESSION_COLOR==='white'?'w':'b'))setTimeout(studyPlanBotReply,350);
+  else prepareMiddlegameTurn();
+}
+
 // Reconstruct the exact real-game position before 21.Qc3. Keep the
 // coach exercise independent of the opening repertoire and training mode.
 const COACH_THREAT_SANS=['e4','e5','Nf3','d6','d4','exd4','Nxd4','Be7','Nc3','Nf6','Bf4','O-O','Bc4','a6','O-O','b5','Bd3','Bb7','Re1','Nbd7','Nf5','b4','Nxe7+','Qxe7','Nd5','Nxd5','exd5','Qf6','Qh5','g6','Qg4','Bxd5','Bh6','Ne5','Qxb4','Rfb8','Qc3','Rxb2','Qxc7','Rb7'];
@@ -3177,12 +3214,13 @@ function coachStartThreat(){
   if(position===INIT){root.textContent='Could not load the training position. Please refresh and retry.';return;}
   FEN=position;HIST=[position];SANS=[];SEL=null;LDOTS=[];LF=null;LT=null;FLIPPED=false;
   drawBoard();drawMoveList();refreshPanel();
-  root.innerHTML='<div class="coachfocus"><h2>Threat recognition — before 21.Qc3</h2><p>The board shows your actual position after 20...Rb7. You are White. Before choosing where to put your queen, identify Black’s forcing tactical idea if you return to c3.</p><div class="coachanswers"><button class="cb" onclick="coachThreatAnswer(false)">...Rxb2</button><button class="cb" onclick="coachThreatAnswer(true)">...Nf3+</button><button class="cb" onclick="coachThreatAnswer(false)">...Qxf2+</button></div><div id="coachthreatfeedback" aria-live="polite"></div><button class="cb" onclick="coachLeaveThreat()">← Coach dashboard</button></div>';
+  root.innerHTML='<div class="coachfocus"><h2>Threat recognition — before 21.Qc3</h2><p>The board shows your actual position after 20...Rb7. You are White. Before choosing where to put your queen, identify Black’s forcing tactical idea if you return to c3.</p><div class="coachanswers"><button class="cb" onclick="coachThreatAnswer(false)">...Rxb2</button><button class="cb" onclick="coachThreatAnswer(true)">...Nf3+</button><button class="cb" onclick="coachThreatAnswer(false)">...Qxf2+</button></div><div id="coachthreatfeedback" aria-live="polite"></div><button class="cb hidden" id="coachthreatnext" onclick="coachGoPuzzles()">Next: practice my mistakes →</button> <button class="cb" onclick="coachLeaveThreat()">← Coach dashboard</button></div>';
   setStat('Threat training: position after 20...Rb7. Identify the tactical threat before moving your queen.','info');
 }
 function coachLeaveThreat(){fullReset();renderCoachDashboard();setStat('Coach dashboard.','info');}
 function coachThreatAnswer(correct){
   const el=document.getElementById('coachthreatfeedback');if(!el)return;
+  if(correct)document.getElementById('coachthreatnext')?.classList.remove('hidden');
   el.innerHTML=correct?'<p><b>Correct.</b> ...Nf3+ checks the king and uncovers the f6–e5–d4–c3 diagonal, exposing your queen on c3. This is a discovered attack with check.</p><p><b>Habit:</b> Before every queen move, scan knight checks and discovered attacks one more time.</p>':'<p><b>Try again.</b> Look for a knight move that checks your king while opening a diagonal from Black’s queen on f6.</p>';
 }
 
