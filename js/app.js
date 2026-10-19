@@ -2314,7 +2314,7 @@ function doFlip(){FLIPPED=!FLIPPED;drawBoard();}
 function setMode(mode){
   MISTAKE_REPLAY=null;PUZZLE=null;
   MODE=mode;BOT_ACTIVE=false;SEL=null;LDOTS=[];SESSION_STARTED=false;PRACTICE_LOCK=false;STUDY_PHASE='opening';STUDY_PLAN=null;MID_FEEDBACK='';MID_PRE_ANALYSIS=null;
-  document.querySelectorAll('.nb').forEach((b,i)=>b.classList.toggle('on',['drill','mistakes','bot','stats','puzzles'][i]===mode));
+  document.querySelectorAll('.nb').forEach((b,i)=>b.classList.toggle('on',['drill','mistakes','bot','stats','puzzles','coach'][i]===mode));
   show('linecard',mode==='drill');
   show('expcard',mode==='drill'||mode==='mistakes');
   show('midbotcard',mode==='drill');
@@ -2323,6 +2323,7 @@ function setMode(mode){
   show('mistakedrillcard',mode==='mistakes');
   show('statscard',mode==='stats');
   show('puzzlecard',mode==='puzzles');
+  show('coachcard',mode==='coach');
   show('randbtn',mode==='drill');
   show('newgamebtn',mode==='bot');
   show('revbtn',false);
@@ -2349,6 +2350,7 @@ function setMode(mode){
     const m='Your chess.com game stats and trends. Use Sync to pull your latest games.';
     setStat(m,'info');setCoach(m);renderStats();
   }
+  if(mode==='coach'){renderCoachDashboard();setStat('Coach: train one weakness at a time, then check whether it improves in your games.','info');}
   if(mode==='puzzles'){
     const m=PUZ_MODE==='positional'
       ?'Positional Masters: deep strategic ideas from famous games. Stockfish freshly verifies every answer.'
@@ -2892,6 +2894,7 @@ function syncStats(){
       if(base)for(const g of base.games)if(g.u)have[g.u]=1;
       let added=0;
       const merged=base?base.games.slice():[];
+      const incomingPGNs=[];
       for(const u of targets){
         const r=await fetch(u);
         if(!r.ok)continue;
@@ -2900,12 +2903,14 @@ function syncStats(){
           const rec=syncGameRecord(g);
           if(!rec||!rec.u||have[rec.u])continue;
           have[rec.u]=1;merged.push(rec);added++;
+          if(g.pgn&&rec.c==='rapid')incomingPGNs.push({url:rec.u,pgn:g.pgn,date:rec.d});
         }
       }
       merged.sort((a,b)=>a.d<b.d?-1:1);
+      if(incomingPGNs.length){try{const key='chesstool_pending_pgn_v1';const old=JSON.parse(localStorage.getItem(key)||'[]');const byUrl=new Map(old.map(x=>[x.url,x]));incomingPGNs.forEach(x=>byUrl.set(x.url,x));localStorage.setItem(key,JSON.stringify([...byUrl.values()].slice(-75)));}catch(err){console.warn('Could not retain new game PGNs',err);}}
       const stats={generated:base?base.generated:'',synced:new Date().toISOString().slice(0,10),games:merged};
       try{localStorage.setItem(STATS_CACHE_KEY,JSON.stringify({savedAt:Date.now(),stats}));}catch(err){}
-      renderStats();
+      renderStats();renderCoachDashboard();
       done(added?('Synced: '+added+' new game'+(added===1?'':'s')+' added.'):'Already up to date — no new games found.');
     })
     .catch(err=>{
@@ -2967,10 +2972,12 @@ function buildPuzzleQueue(){
   const list=puzzleList(),prog=puzzleProgGet();
   const items=list.map(p=>{
     const s=prog.solved[p.id]||{};
-    return{id:p.id,solved:!!s.s,fails:s.f||0,last:s.last||0};
+    return{id:p.id,solved:!!s.s,fails:s.f||0,last:s.last||0,due:s.due||0,mastery:s.mastery||0};
   });
   // Spaced repetition: unsolved first, most-failed first, least-recent first.
   items.sort((a,b)=>{
+    const now=Date.now(),ad=!a.solved||a.due<=now,bd=!b.solved||b.due<=now;
+    if(ad!==bd)return ad?-1:1;
     if(a.solved!==b.solved)return a.solved?1:-1;
     if(b.fails!==a.fails)return b.fails-a.fails;
     return a.last-b.last;
@@ -3116,29 +3123,56 @@ function handlePuzzleMove(uci){
           if(ex){ex.innerHTML='<b>The idea:</b> '+escHtml(r.item.explanation);ex.classList.remove('hidden');}
         }
         const prev=prog.solved[r.item.id]||{};
-        prog.solved[r.item.id]={s:true,f:prev.f||0,last:Date.now()};
+        const mastery=r.attempts===1?Math.min(5,(prev.mastery||0)+1):0;
+        const days=[1,3,7,14,30,60][mastery];
+        prog.solved[r.item.id]={s:true,f:prev.f||0,last:Date.now(),mastery,due:Date.now()+days*86400000};
         prog.streak++;prog.day.count++;
         puzzleProgSave(prog);
         const nx=document.getElementById('pznext');if(nx)nx.classList.remove('hidden');
-        updatePuzzleCard();
+        updatePuzzleCard();renderCoachDashboard();
         r.checking=true;PRACTICE_LOCK=true; // keep the solved position visible
         return;
       }
       const prev=prog.solved[r.item.id]||{};
-      prog.solved[r.item.id]={s:false,f:(prev.f||0)+1,last:Date.now()};
+      prog.solved[r.item.id]={s:false,f:(prev.f||0)+1,last:Date.now(),mastery:0,due:0};
       prog.streak=0;
       puzzleProgSave(prog);
       const bestText=r.bestSan?' The improvement was '+r.bestSan+'.':'';
       const lossText=loss!=null&&loss<90?' Your move is about '+loss.toFixed(2)+' pawns worse than the fresh best.':'';
       const msg='Not quite — '+san+' did not pass fresh verification.'+bestText+lossText+evalPart+replyPart+' This puzzle will come back sooner. Try again.';
       setStat(msg,'bad');setCoach(msg);
-      updatePuzzleCard();
+      updatePuzzleCard();renderCoachDashboard();
       setTimeout(()=>resetPuzzlePosition(r),1700);
     });
   });
 }
 
-console.info('ChessTool V2.32 loaded: actionable AI coach + live reviewed-game puzzles');
+
+// COACH DASHBOARD: training feedback is based on actual puzzle attempts.
+// Synced PGNs are retained for future review; they are NOT called engine analyzed.
+function renderCoachDashboard(){
+  const root=document.getElementById('coachbody');if(!root)return;
+  const p=puzzleProgGet(),items=puzzleList(),now=Date.now();
+  const due=items.filter(x=>{const v=p.solved[x.id];return !v||!v.s||!v.due||v.due<=now;}).length;
+  const mastered=items.filter(x=>(p.solved[x.id]?.mastery||0)>=3).length;
+  let pending=[];try{pending=JSON.parse(localStorage.getItem('chesstool_pending_pgn_v1')||'[]');}catch(e){}
+  root.innerHTML='<div class="coachfocus"><div class="coacheyebrow">YOUR CURRENT PRIORITY</div><h2>Remember the threat before you move</h2><p>In your recent game, you spotted ...Nf3+ but later placed your queen on c3 again. Train a repeatable final blunder-check: opponent checks, captures, threats — especially discovered attacks.</p><button class="cb p" onclick="coachStartThreat()">Practice threat recognition →</button></div>'+
+    '<div class="coachmetrics"><div><b>'+due+'</b><span>Puzzles due / not yet mastered</span></div><div><b>'+mastered+'</b><span>Practiced to level 3+</span></div><div><b>'+pending.length+'</b><span>Recent rapid PGNs saved</span></div></div>'+
+    '<div class="coachfocus"><h3>Today’s focused session</h3><p><b>8 min</b> — Threat recognition: name the opponent’s forcing move before selecting your own.</p><p><b>7 min</b> — My Blunders: solve due positions without guessing. Correct first attempts move to longer review intervals.</p><p><b>10 min</b> — Train: continue your existing repertoire into the middlegame and explain your plan.</p><p><b>5 min</b> — Review one decision from a real game, and write what you missed.</p><button class="cb" onclick="coachGoPuzzles()">Practice my mistakes →</button> <button class="cb" onclick="coachGoTrain()">Train middlegame →</button></div>'+
+    '<div class="coachfocus"><h3>What sync does today</h3><p>Sync collects game statistics and saves PGNs for newly discovered rapid games on this device. It does <b>not yet</b> automatically run engine analysis on those PGNs or turn them into verified puzzles. Reviewed in-app games already feed the personal mistake queue.</p><p>Spaced repetition now schedules correct first-try answers for 1, 3, 7, 14, 30 or 60 days. Failed or retried puzzles return to the near-term queue.</p></div>';
+}
+function coachGoPuzzles(){setMode('puzzles');setPuzMode('blunders');}
+function coachGoTrain(){setMode('drill');}
+function coachStartThreat(){
+  const root=document.getElementById('coachbody');if(!root)return;
+  root.innerHTML='<div class="coachfocus"><h2>Threat recognition — your 21.Qc3 mistake</h2><p>Black: queen on f6, knight on e5. White: king on g1, queen considering c3. Before placing the queen on c3, what forcing move should you check?</p><div class="coachanswers"><button class="cb" onclick="coachThreatAnswer(false)">...Rxb2</button><button class="cb" onclick="coachThreatAnswer(true)">...Nf3+</button><button class="cb" onclick="coachThreatAnswer(false)">...Qxf2+</button></div><div id="coachthreatfeedback" aria-live="polite"></div><button class="cb" onclick="renderCoachDashboard()">← Coach dashboard</button></div>';
+}
+function coachThreatAnswer(correct){
+  const el=document.getElementById('coachthreatfeedback');if(!el)return;
+  el.innerHTML=correct?'<p><b>Correct.</b> ...Nf3+ checks the king and uncovers the f6–e5–d4–c3 diagonal, exposing your queen on c3. This is a discovered attack with check.</p><p><b>Habit:</b> Before every queen move, scan knight checks and discovered attacks one more time.</p>':'<p><b>Try again.</b> Look for a knight move that checks your king while opening a diagonal from Black’s queen on f6.</p>';
+}
+
+console.info('ChessTool V2.33 loaded: actionable AI coach + live reviewed-game puzzles');
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 if(!DB[INIT])DB[INIT]={name:'Starting Position',eco:'',note:'Welcome! Drill your opening repertoire.',moves:{}};
