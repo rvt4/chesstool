@@ -179,7 +179,12 @@ function addLine(moves,anns){
 
 // The cleanest approach: define each line as an array of SANs,
 // walk from INIT resolving each SAN via the engine, register every position
-function registerLine(sanArr, annArr){
+function registerLine(sanArr, annArr, color){
+  // color: 'white' | 'black' — whose repertoire this line belongs to. Notes are
+  // stored per move AND per color, so a White-side note about Black's reply
+  // (e.g. "1…c6 — as White, use the Advance") can never be shown to you when
+  // you are the one playing 1…c6 in your Caro-Kann.
+  const col=color||'*';
   let fen=INIT;
   for(let i=0;i<sanArr.length;i++){
     const san=sanArr[i];
@@ -193,11 +198,36 @@ function registerLine(sanArr, annArr){
       if(a.name&&!DB[fen].name)DB[fen].name=a.name;
       if(a.eco&&!DB[fen].eco)DB[fen].eco=a.eco;
       if(a.note&&!DB[fen].note)DB[fen].note=a.note;
+      if(!DB[fen].mn)DB[fen].mn={};
+      const k=col+'|'+san;
+      if(!DB[fen].mn[k])DB[fen].mn[k]={name:a.name||'',eco:a.eco||'',note:a.note||''};
     }
     fen=nextFen;
   }
 }
+// Note for a specific move from a specific position, from one side's repertoire.
+function moveNoteObj(fen,san,color){
+  const n=DB[fen];if(!n||!n.mn)return null;
+  return n.mn[(color||'*')+'|'+san]||n.mn['*|'+san]||null;
+}
+function moveNote(fen,san,color){const o=moveNoteObj(fen,san,color);return o?o.note:'';}
 
 // Helper: annotation shorthand
 const A=(name,eco,note)=>({name,eco,note});
 const N=null; // no annotation
+
+// Compact line builder used by newer data files. Each entry is either a SAN
+// string (no note) or [san, noteText, name?, eco?]. The move label
+// ("4.d3" / "4…Bf5") is generated from the ply, so it can never drift out of
+// sync with the move it describes.
+function regLine(color,name,eco,moves){
+  const sans=[],anns=[];
+  moves.forEach((m,i)=>{
+    const san=typeof m==='string'?m:m[0];sans.push(san);
+    if(typeof m==='string'||!m[1]){anns.push(null);return;}
+    const n=Math.floor(i/2)+1,lab=(i%2?n+'…':n+'.')+san;
+    anns.push(A(m[2]||name,m[3]||eco,'<strong>'+lab+'</strong> — '+m[1]));
+  });
+  registerLine(sans,anns,color);
+  return sans;
+}

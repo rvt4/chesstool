@@ -234,6 +234,7 @@ function mistakeCategory(entry,beforeFen,afterFen,grade,explanation,beforeEval,a
 }
 function gameFingerprint(){return BOT_LOG.map(e=>e.uci).join('-');}
 function reviewedGameResult(){
+  if(BOT_RESULT&&BOT_RESULT.result)return BOT_RESULT.result;
   try{const fen=REVIEW_FENS[REVIEW_FENS.length-1]||FEN,turn=parseFen(fen).turn,lm=legalMoves(fen);if(lm.length)return'completed';if(!inCheck(fen,turn))return'draw';const userSide=BOT_GAME_COLOR==='white'?'w':'b';return turn===userSide?'loss':'win';}catch(e){return'completed';}
 }
 function whiteEvalToSide(ev,side){
@@ -652,6 +653,7 @@ let PRACTICE_LOCK=false;
 let LF=null,LT=null; // last move from/to squares
 
 // bot state
+let BOT_RESULT=null,RESIGN_ARMED=false,DRAW_DECLINED_AT=-99;
 let BOT_ACTIVE=false,BOT_THINKING=false,BOT_SKILL=10,BOT_LABEL='1600',BOT_COLOR='white',BOT_GAME_COLOR='white';
 let BOT_LOG=[];
 // quiz state
@@ -775,8 +777,8 @@ function expectedPracticeMoves(){
   return [...new Set(currentPracticeLines().map(l=>l.sans[SANS.length]).filter(Boolean))];
 }
 
-function explainExpectedMove(expected, node){
-  const why=stripHtml(node?.note||'');
+function explainExpectedMove(expected, fen){
+  const why=[...new Set(expected.map(m=>stripHtml(moveNote(fen,m,SESSION_COLOR))).filter(Boolean))].join(' / ');
   const choice=expected.length===1?expected[0]:expected.join(' or ');
   return 'Preferred repertoire move'+(expected.length>1?'s':'')+': '+choice+'.'+(why?' Why: '+why:'');
 }
@@ -861,7 +863,8 @@ function handlePracticeMove(uci){
 
   if(correct){
     refreshPanel();
-    const msg='✓ Correct: '+san+(stripHtml(node?.note)?' — '+stripHtml(node.note):'');
+    const why=stripHtml(moveNote(beforeFen,san,SESSION_COLOR));
+    const msg='✓ Correct: '+san+(why?' — '+why:'');
     setStat(msg,'ok');setCoach(msg);
     renderStudy();
     setTimeout(practiceAutoReply,450);
@@ -871,7 +874,7 @@ function handlePracticeMove(uci){
   // A wrong repertoire move is still allowed on the board first. Then explain
   // it and restore the exact pre-mistake position so the learner can retry.
   PRACTICE_LOCK=true;
-  const explanation=explainExpectedMove(expected,node);
+  const explanation=explainExpectedMove(expected,beforeFen);
   const miss='✗ '+san+' is legal, but it leaves your selected repertoire. '+explanation;
   setStat(miss,'bad');setCoach(miss);
   document.getElementById('note').innerHTML='<strong>Why this is a miss:</strong> '+explanation;
@@ -1141,7 +1144,7 @@ function doHint(){
   }
   const moves=expectedPracticeMoves();
   if(!moves.length){setStat('No more moves in this selected line.','info');return;}
-  const node=DB[FEN];setStat('💡 '+explainExpectedMove(moves,node),'info');
+  setStat('💡 '+explainExpectedMove(moves,FEN),'info');
 }
 
 // ─── BOT MODE ─────────────────────────────────────────────────────────────────
@@ -1394,10 +1397,12 @@ function startBotGame(){
   FLIPPED=BOT_COLOR==='black'; // user perspective
   fullReset();
   BOT_ACTIVE=true;BOT_GAME_COLOR=BOT_COLOR;
-  BOT_LOG=[];
+  BOT_LOG=[];BOT_RESULT=null;RESIGN_ARMED=false;DRAW_DECLINED_AT=-99;
+  document.getElementById('revbtn')?.classList.add('hidden');
   BOT_THINKING=false;
   document.getElementById('revcard').classList.add('hidden');
   const bm='You are '+BOT_COLOR+'. Skill: '+BOT_LABEL;setStat(bm,'info');setCoach(bm);
+  updateBotButtons();
   if(BOT_COLOR==='black')setTimeout(botThink,500);
 }
 
@@ -1434,6 +1439,7 @@ function doBotPlayerMove(uci){
   refreshPanel();drawBoard();drawMoveList();
   setCoach('You played '+san+'. '+BOT_LABEL+' is thinking…');
   if(!legalMoves(nf).length){endBot();return;}
+  const ad=autoDrawReason();if(ad){finishBotGame('Draw',ad,'draw');return;}
   setTimeout(botThink,360);
 }
 
@@ -1453,19 +1459,100 @@ function botThink(){
     FEN=nf;HIST.push(nf);SANS.push(san);
     refreshPanel();drawBoard();drawMoveList();
     if(!legalMoves(nf).length){endBot();return;}
+    const ad=autoDrawReason();if(ad){finishBotGame('Draw',ad,'draw');return;}
     setStat('Your turn.','info');setCoach('Bot played '+san+'. Your turn.');
   },BOT_LABEL==='Full');
 }
 
 function endBot(){
-  BOT_ACTIVE=false;BOT_THINKING=false;
   const turn=parseFen(FEN).turn,none=legalMoves(FEN).length===0,mate=none&&inCheck(FEN,turn);
-  const title=mate?'Checkmate':'Game over';
-  const result=mate?((turn==='w'?'Black':'White')+' wins by checkmate.'):(none?'Draw by stalemate.':'Game ended.');
-  setStat(title+' — '+result,'info');setCoach(title+' — '+result);
-  document.getElementById('revbtn').classList.remove('hidden');
+  const userSide=BOT_GAME_COLOR==='white'?'w':'b';
+  const title=mate?'Checkmate':(none?'Draw':'Game over');
+  const text=mate?((turn==='w'?'Black':'White')+' wins by checkmate.'):(none?'Draw by stalemate.':'Game ended.');
+  finishBotGame(title,text,mate?(turn===userSide?'loss':'win'):(none?'draw':null));
+}
+
+// Shared game-over path: checkmate, stalemate, resignation, draw by agreement,
+// repetition, 50-move rule or insufficient material. Always offers Review.
+function finishBotGame(title,text,result){
+  BOT_ACTIVE=false;BOT_THINKING=false;RESIGN_ARMED=false;
+  BOT_RESULT=result?{result,title}:null;
+  setStat(title+' — '+text,'info');setCoach(title+' — '+text);
+  if(BOT_LOG.length)document.getElementById('revbtn').classList.remove('hidden');
+  updateBotButtons();
   const ov=document.getElementById('gameoveroverlay');
-  if(ov){document.getElementById('gameovertitle').textContent=title;document.getElementById('gameovertext').textContent=result;ov.classList.remove('hidden');}
+  if(ov){document.getElementById('gameovertitle').textContent=title;document.getElementById('gameovertext').textContent=text;
+    const rb=document.getElementById('gameoverreview');if(rb)rb.classList.toggle('hidden',!BOT_LOG.length);
+    ov.classList.remove('hidden');}
+}
+
+function updateBotButtons(){
+  const on=MODE==='bot'&&BOT_ACTIVE;
+  ['resignbtn','drawbtn'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.toggle('hidden',!on);});
+  const rb=document.getElementById('resignbtn');if(rb&&!RESIGN_ARMED)rb.textContent='🏳 Resign';
+}
+
+function resignBot(){
+  if(MODE!=='bot'||!BOT_ACTIVE)return;
+  const btn=document.getElementById('resignbtn');
+  if(!RESIGN_ARMED){
+    RESIGN_ARMED=true;if(btn)btn.textContent='Tap again';
+    setStat('Tap Resign again to confirm.','info');
+    setTimeout(()=>{RESIGN_ARMED=false;updateBotButtons();},3000);
+    return;
+  }
+  const winner=BOT_GAME_COLOR==='white'?'Black':'White';
+  finishBotGame('You resigned',winner+' wins by resignation. Review the game to find the moment it turned.','loss');
+}
+
+function botSideMaterial(fen,side){
+  const v={p:1,n:3,b:3,r:5,q:9,k:0};let w=0,b=0;
+  for(const ch of fen.split(' ')[0]){const l=ch.toLowerCase();if(v[l]==null)continue;if(ch===l)b+=v[l];else w+=v[l];}
+  return side==='w'?w-b:b-w;
+}
+
+function offerDraw(){
+  if(MODE!=='bot'||!BOT_ACTIVE)return;
+  const userSide=BOT_GAME_COLOR==='white'?'w':'b',botSide=userSide==='w'?'b':'w';
+  if(BOT_THINKING||parseFen(FEN).turn!==userSide){setStat('Offer a draw on your own move.','info');return;}
+  if(SANS.length<20){const m='The bot declines — too early. Draw offers are considered from move 10.';setStat(m,'info');setCoach(m);return;}
+  if(SANS.length-DRAW_DECLINED_AT<6){const m='The bot just declined. Play at least 3 more moves before offering again.';setStat(m,'info');setCoach(m);return;}
+  BOT_THINKING=true;setStat('Draw offered… '+BOT_LABEL+' is considering.','info');
+  const fen=FEN;
+  const decide=botEval=>{
+    BOT_THINKING=false;
+    if(!BOT_ACTIVE||FEN!==fen)return;
+    // Weaker bots accept slightly worse-for-you positions; stronger bots only accept when level.
+    const thr={'1400':0.8,'1600':0.6,'1800':0.4,'2000':0.25,'Full':0.1}[BOT_LABEL]??0.4;
+    if(botEval<=thr){
+      finishBotGame('Draw agreed','The '+BOT_LABEL+' bot accepted your draw offer.','draw');
+    }else{
+      DRAW_DECLINED_AT=SANS.length;
+      const m='Draw declined — the bot thinks it is better and wants to play on.';
+      setStat(m,'bad');setCoach(m);
+    }
+  };
+  sfAnalyzePositionDepth(fen,12,res=>{
+    if(res&&res.info){const ev=infoWhiteEval(fen,res.info);const e=whiteEvalToSide(ev,botSide);if(e!=null){decide(e);return;}}
+    decide(botSideMaterial(fen,botSide)); // engine unavailable: fall back to material count
+  });
+}
+
+// Automatic draws the bot game previously missed.
+function autoDrawReason(){
+  const key=repertoirePositionKey(FEN);
+  if(HIST.filter(h=>repertoirePositionKey(h)===key).length>=3)return'Draw by threefold repetition.';
+  if(parseFen(FEN).hm>=100)return'Draw by the 50-move rule.';
+  const pcs=FEN.split(' ')[0].replace(/[\d\/kK]/g,'');
+  if(!pcs.length)return'Draw by insufficient material (king vs king).';
+  if(pcs.length===1&&/[nNbB]/.test(pcs))return'Draw by insufficient material.';
+  if(/^[bB]+$/.test(pcs)){
+    // only bishops left: draw if they are all on the same colour of square
+    const {bd}=parseFen(FEN);const cols=new Set();
+    for(let r=0;r<8;r++)for(let f=0;f<8;f++){const p=GP(bd,r,f);if(p&&p.toLowerCase()==='b')cols.add((r+f)%2);}
+    if(cols.size===1)return'Draw by insufficient material.';
+  }
+  return null;
 }
 
 function isLegalEngineMove(fen,uci){
@@ -1912,7 +1999,7 @@ function reviewExplanation(entry,beforeFen,afterFen,bestSan,probLoss,engineOK,cl
   const parts=[];
   const node=DB[beforeFen],repStatus=repertoireMoveStatus(beforeFen,entry.san);
   if(repStatus.inBook){
-    const why=node&&node.moves&&node.moves[entry.san]?stripHtml(node.note||''):'';
+    const why=stripHtml(moveNote(beforeFen,entry.san,turn==='w'?'white':'black'));
     if(repStatus.transposition)parts.push('📖 Repertoire transposition: this move reaches a position already contained in your stored repertoire.');
     else parts.push(why?'📖 Repertoire: '+why:'📖 This move matches your stored repertoire.');
   }else{
@@ -2242,11 +2329,20 @@ function showReview(){
 
 // ─── PANEL / STATUS ──────────────────────────────────────────────────────────
 function refreshPanel(){
+  // Show the explanation of the move that was just played (from the
+  // perspective of the side you are training), never a spoiler for the next one.
   const node=DB[FEN];
-  const name=node?.name||'Position';const eco=node?.eco||'';
+  let last=null;
+  if(HIST.length>1&&SANS.length){
+    const prev=HIST[HIST.length-2],san=SANS[SANS.length-1],mover=parseFen(prev).turn==='w'?'white':'black';
+    const persp=(MODE==='drill'&&SESSION_STARTED)?SESSION_COLOR:(MODE==='bot'?BOT_GAME_COLOR:mover);
+    last=moveNoteObj(prev,san,persp)||moveNoteObj(prev,san,mover);
+  }
+  const name=last?.name||node?.name||'Position';const eco=last?.eco||node?.eco||'';
   document.getElementById('opname').textContent=name;
   document.getElementById('opeco').textContent=eco;
-  document.getElementById('note').innerHTML=node?.note||'<em>Position not in repertoire.</em>';
+  const startNote=FEN===INIT?(node?.note||''):'';
+  document.getElementById('note').innerHTML=last?.note||startNote||(node?'<em>In your repertoire — keep going.</em>':'<em>Position not in repertoire.</em>');
   document.getElementById('prog').style.width=Math.min(100,(SANS.length/12)*100)+'%';
   const ho=document.getElementById('hudopening'),he=document.getElementById('hudeco');
   if(ho)ho.textContent=name;if(he)he.textContent=eco;
@@ -2289,8 +2385,9 @@ function goBack(){
 function fullReset(){
   MISTAKE_REPLAY=null;
   FEN=INIT;HIST=[INIT];SANS=[];SEL=null;LDOTS=[];LF=null;LT=null;
-  BOT_ACTIVE=false;BOT_LOG=[];
+  BOT_ACTIVE=false;BOT_LOG=[];BOT_RESULT=null;RESIGN_ARMED=false;
   document.getElementById('gameoveroverlay')?.classList.add('hidden');
+  if(typeof updateBotButtons==='function')updateBotButtons();
   document.getElementById('reviewdock')?.classList.add('hidden');
   document.getElementById('playhud')?.classList.remove('hidden');
   document.getElementById('planinfocard')?.classList.add('hidden');
@@ -2324,9 +2421,11 @@ function setMode(mode){
   show('statscard',mode==='stats');
   show('puzzlecard',mode==='puzzles');
   show('coachcard',mode==='coach');
+  show('cmcard',mode==='coach');
   show('randbtn',mode==='drill');
   show('newgamebtn',mode==='bot');
   show('revbtn',false);
+  show('resignbtn',false);show('drawbtn',false);
   show('hintbtn',mode==='drill'||mode==='mistakes'||mode==='puzzles');
   document.getElementById('revcard').classList.add('hidden');
   document.getElementById('reviewdock')?.classList.add('hidden');
@@ -2350,7 +2449,7 @@ function setMode(mode){
     const m='Your chess.com game stats and trends. Use Sync to pull your latest games.';
     setStat(m,'info');setCoach(m);renderStats();
   }
-  if(mode==='coach'){renderCoachDashboard();setStat('Coach: train one weakness at a time, then check whether it improves in your games.','info');}
+  if(mode==='coach'){renderCoachDashboard();if(typeof renderCMPlan==='function')renderCMPlan();setStat('Coach: train one weakness at a time, then check whether it improves in your games.','info');}
   if(mode==='puzzles'){
     const m=PUZ_MODE==='positional'
       ?'Positional Masters: deep strategic ideas from famous games. Stockfish freshly verifies every answer.'
