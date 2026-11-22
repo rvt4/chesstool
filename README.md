@@ -1,4 +1,38 @@
-# ChessTool V2.32
+# ChessTool V2.34
+
+## New in V2.34 — repertoire audit, resign/draw vs bots, Road to CM
+
+**Repertoire audit (49 drill lines, all machine-checked: legal SAN, every one of
+your own moves annotated, move labels match the moves):**
+- FIX `ck-cls`: the old line ended 16.Ne5 Nd7 17.Nxd7 Qxd7 — but 17…Bxh4 wins
+  White's queen (Qh4 sat on the Be7 diagonal). Line now ends 15.Qe2 Qd5 (…Qe4 trade idea).
+- FIX note system: notes were stored per position, first-write-wins, so White-side
+  notes leaked into Black drills (playing 1…c6 in your Caro showed "1…e5 — Develop
+  with tempo…"). Notes are now stored per move AND per color (`moveNote(fen,san,color)`).
+  The panel shows the note for the move just played — no more spoilers for the next move.
+- FIX 4 misaligned Caro notes (e.g. "4…Bf5!" shown on 4.Nxe4).
+- FIX Slav "4…dxc4 without a4" notes claimed you kept an extra pawn after 6.Bxc4 (you don't).
+  Exchange Slav notes no longer call the symmetrical structure "Carlsbad".
+  4.e3 Bf5 note now warns about 5.cxd5 cxd5 6.Qb3.
+- Pirc: 8.dxe5 → 8.fxe5 dxe5 9.d5 Nd4 10.Nxd4 exd4 11.Ne2 (main line).
+- Panov: 10…Ba5 → 10…Be7 11.Re1. Advance 4.Nc3: 10…Ne7 → 10…Nc6 (tempo on the queen).
+- Philidor 3.Bc4 (a second, conflicting answer to 2…d6) replaced by the Lion/Hanham
+  line vs your 3.d4. Stafford line stops at the safe 6.Be2 setup (old 6.Nc3 allowed …Ng4).
+- The 11 V2.32 lines had no annotations at all — now fully annotated, with verified traps
+  (Petrov 4.Qe2/5.Nc6+, Owen's 3…f5?! trap, Hanham 6.Qd5, French 9.Bb5+).
+- New lines: Scandinavian 3…Qa5 and 2…Nf6, Alekhine 4…Bg4, Alapin 2…e6 (→ French) and
+  2…d6, French Advance 5…Bd7, Hillbilly 3.Bb3, Two Knights 6.d3, Slav 6.Ne5, Slav 4.e3 Bf5 5.cxd5.
+- New data file `data/repertoire_v233.js`; `regLine()` in core.js generates move labels from the ply.
+
+**vs Bot:** 🏳 Resign (tap twice) and ½ Offer Draw buttons during games. Draw offers are
+judged by Stockfish from the bot's side (weaker bots accept slightly worse positions; from
+move 10; 3-move wait after a decline). Automatic draws: threefold repetition, 50-move rule,
+insufficient material. Every ending offers Review Game; resignations log as losses.
+
+**Road to CM (My Coach tab):** phased plan from ~1500 rapid to FIDE 2200, auto-picked from
+your rating, weekly checklist (stored per ISO week), study lists, exit criteria, house rules.
+
+## V2.32
 
 ## New in V2.32 — repertoire gap-fillers + Positional Masters puzzles
 

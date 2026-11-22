@@ -294,3 +294,21 @@ nav{display:flex;gap:5px;flex-wrap:wrap}
 
 /* V2.33 personal coach */
 .coachfocus{padding:16px;border:1px solid var(--border,#5555);border-radius:12px;margin-bottom:12px;line-height:1.5}.coachfocus h2{font-size:1.15rem;margin:6px 0}.coachfocus h3{font-size:1rem;margin:0 0 10px}.coachfocus p{font-size:.84rem;margin:8px 0 12px}.coacheyebrow{font-size:.7rem;letter-spacing:.09em;color:var(--acc);font-weight:700}.coachmetrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0}.coachmetrics>div{border:1px solid var(--border,#5555);border-radius:10px;padding:12px 8px}.coachmetrics b{display:block;font-size:1.45rem}.coachmetrics span{display:block;font-size:.7rem;color:var(--muted)}.coachanswers{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0}@media(max-width:520px){.coachmetrics{grid-template-columns:1fr 1fr}.coachfocus{padding:12px}}
+
+/* Road to CM */
+.cmbar{height:8px;background:var(--bdr,#5555);border-radius:6px;overflow:hidden;margin:8px 0}
+.cmbar>div{height:100%;background:var(--acc);border-radius:6px}
+.cmsmall{font-size:.76rem!important;color:var(--muted)}
+.cmtime{font-size:.74rem;color:var(--muted);font-weight:400;margin-left:6px}
+.cmwarn{color:#e07a5f}
+.cmphases{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.mini.on{background:var(--acc);color:#1C1410;border-color:var(--acc)}
+.cmtask{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--bdr,#5553);font-size:.82rem}
+.cmtask.ok .cmlabel{color:var(--muted);text-decoration:line-through}
+.cmcount{min-width:34px;font-weight:600;color:var(--acc)}
+.cmlabel{flex:1;line-height:1.35}
+.cmbtns{display:flex;gap:4px}
+.cmlist{margin:4px 0 4px 18px;padding:0;font-size:.82rem;line-height:1.5}
+.cmall{margin:4px 0 8px;font-size:.82rem}.cmall summary{cursor:pointer;color:var(--acc);margin-bottom:6px}
+.cmphase{padding:6px 0;border-top:1px solid var(--bdr,#5553);line-height:1.45}
+.cmbtns .mini{padding:5px 10px;font-size:.8rem}
